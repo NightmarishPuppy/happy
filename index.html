@@ -204,7 +204,7 @@ const byRank = (a,b) => rank(a) - rank(b) || (a.id < b.id ? -1 : 1);
 
 function render(){
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', b.dataset.kind===kind);
-  $('input').placeholder = kind==='buy' ? 'Что купить? Можно списком' : 'Что сделать? Можно списком';
+  $('input').placeholder = kind==='buy' ? 'Что купить? Можно списком' : 'Что сделать?';
   for (const k of ['buy','todo']) {
     const left = items.filter(i=>i.kind===k && !i.done).length;
     $('c-'+k).textContent = left ? left : '';
@@ -344,8 +344,12 @@ $('form').addEventListener('submit', e => {
   const raw = $('input').value.trim();
   if (!raw) return;
   // Голосовая фраза «молоко, хлеб и яйца» → три пункта
-  const parts = raw.split(/\s*(?:[,;\n]+|\.\s+|\s+и\s+|\s+а также\s+|\s+ещё\s+|\s+еще\s+)\s*/i)
-    .map(s => s.replace(/^(и|ещё|еще)\s+/i,'').replace(/[.!?…]+$/,'').trim())
+  // Покупки: «молоко, хлеб и яйца» → три пункта. Дела: фраза остаётся целиком («помыть и заклеить окна»)
+  const parts = (kind === 'buy'
+      ? raw.split(/\s*(?:[,;\n]+|\.\s+|\s+и\s+|\s+а также\s+|\s+ещё\s+|\s+еще\s+)\s*/i)
+          .map(s => s.replace(/^(и|ещё|еще)\s+/i,''))
+      : raw.split(/\n+/))
+    .map(s => s.replace(/[.!?…]+$/,'').trim())
     .filter(Boolean)
     .map(s => s.charAt(0).toUpperCase() + s.slice(1));
   if (!parts.length) return;
