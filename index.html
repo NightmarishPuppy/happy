@@ -31,7 +31,7 @@ html,body{height:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.4}
 .wrap{max-width:560px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 0}
-header{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:12px}
+header{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:12px}
 h1{font-family:var(--display);font-weight:800;font-size:24px;letter-spacing:-.02em;margin:0}
 .date{color:var(--muted);font-size:14px;margin-right:auto}
 .tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:16px;background:var(--soft);padding:5px;border-radius:14px}
@@ -123,7 +123,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <h1>Список</h1>
     <span class="date" id="today"></span>
     <button class="btn2 primary" id="install" type="button" hidden>Установить</button>
-    <button class="gear" id="open-settings" type="button" aria-label="Настройки" hidden>
+    <button class="gear" id="open-settings" type="button" aria-label="Настройки">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
     </button>
   </header>
@@ -162,7 +162,8 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       <span class="pill" id="sync-pill">не настроена</span>
     </div>
     <div id="sync-setup">
-      <p>Список будет храниться в вашем GitHub и совпадать на всех устройствах. Настраивается один раз на каждом устройстве:</p>
+      <p><b>Это необязательно.</b> Без синхронизации список работает и хранится на этом устройстве.</p>
+      <p>Если хотите один список на нескольких устройствах, его можно хранить в вашем GitHub. Настраивается один раз на каждом устройстве:</p>
       <ol>
         <li>Откройте <a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=%D0%A1%D0%BF%D0%B8%D1%81%D0%BE%D0%BA%20%D0%BF%D0%BE%D0%BA%D1%83%D0%BF%D0%BE%D0%BA" target="_blank" rel="noopener">страницу создания ключа на GitHub</a>.</li>
         <li>В поле <b>Expiration</b> выберите <b>No expiration</b>. Галочка <b>gist</b> уже стоит, больше ничего не отмечайте.</li>
@@ -606,34 +607,7 @@ $('disconnect').onclick = () => {
   setStatus('Синхронизация отключена. Список остался на этом устройстве.');
 };
 
-// Шестерёнку видят только те, у кого включена синхронизация или кто открыл ссылку с ?sync
-function showGear() {
-  let flag = false;
-  try {
-    if (/[?&]sync\b/.test(location.search)) localStorage.setItem('spisok-show-settings', '1');
-    flag = localStorage.getItem('spisok-show-settings') === '1';
-  } catch(e) {}
-  $('open-settings').hidden = !(cfg.token || flag);
-}
-
-// Скрытый вход в настройки: удержать надпись «Список» около секунды (или нажать на неё 5 раз подряд)
-(function secretSettings() {
-  const h = document.querySelector('h1');
-  h.style.webkitUserSelect = 'none'; h.style.userSelect = 'none'; h.style.webkitTouchCallout = 'none';
-  let timer = null, taps = 0, tapTimer = null;
-  const unlock = () => {
-    try { localStorage.setItem('spisok-show-settings', '1'); } catch(e) {}
-    showGear(); $('open-settings').hidden = false;
-    $('open-settings').click();
-  };
-  h.addEventListener('pointerdown', () => { clearTimeout(timer); timer = setTimeout(unlock, 900); });
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => h.addEventListener(ev, () => clearTimeout(timer)));
-  h.addEventListener('contextmenu', e => e.preventDefault());
-  h.addEventListener('click', () => {
-    taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => taps = 0, 1500);
-    if (taps >= 5) { taps = 0; unlock(); }
-  });
-})();
+function showGear() {}
 
 function startSync() {
   showGear();
