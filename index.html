@@ -81,6 +81,21 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .btn2.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .backup.stale{border-color:var(--danger)}
 .backup.stale p b{color:var(--danger)}
+.sync{margin:22px 0 6px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--card);display:flex;flex-direction:column;gap:10px}
+.sync p,.sync ol{margin:0;font-size:14px;color:var(--muted);line-height:1.5}
+.sync ol{padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.sync b{color:var(--ink)}
+.sync a{color:var(--accent);font-weight:600}
+.sync code{font-size:13px;background:var(--soft);padding:1px 4px;border-radius:4px}
+.sync .row{display:flex;gap:8px;flex-wrap:wrap}
+.sync .row input{flex:1 1 180px;padding:10px 12px;font-size:15px}
+.sync-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pill{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.pill.ok{color:var(--accent)}
+.pill.err{color:var(--danger)}
+.files summary{font-size:14px;color:var(--muted);cursor:pointer;padding:4px 0}
+.files[open]{display:flex;flex-direction:column;gap:10px}
+.files.stale summary{color:var(--danger)}
 </style>
 </head>
 <body>
@@ -100,13 +115,40 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   <ul id="list"></ul>
   <button class="clear" id="clear" hidden></button>
 
-  <section class="backup" id="backup">
-    <p id="backup-note">Список хранится в памяти браузера на этом телефоне. Чтобы ничего не потерять, иногда сохраняйте копию в файл.</p>
-    <div class="row">
-      <button class="btn2 primary" id="save-copy" type="button">Сохранить копию в файл</button>
-      <button class="btn2" id="load-copy" type="button">Загрузить из файла</button>
-      <input type="file" id="file" accept=".html,.htm,text/html" hidden>
+  <section class="sync" id="syncbox">
+    <div class="sync-head">
+      <b>Синхронизация</b>
+      <span class="pill" id="sync-pill">не настроена</span>
     </div>
+    <div id="sync-setup">
+      <p>Список будет храниться в вашем GitHub и совпадать на всех устройствах. Настраивается один раз на каждом устройстве:</p>
+      <ol>
+        <li>Откройте <a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=%D0%A1%D0%BF%D0%B8%D1%81%D0%BE%D0%BA%20%D0%BF%D0%BE%D0%BA%D1%83%D0%BF%D0%BE%D0%BA" target="_blank" rel="noopener">страницу создания ключа на GitHub</a>.</li>
+        <li>В поле <b>Expiration</b> выберите <b>No expiration</b>. Галочка <b>gist</b> уже стоит, больше ничего не отмечайте.</li>
+        <li>Внизу нажмите <b>Generate token</b> и скопируйте ключ, он начинается с <code>ghp_</code>.</li>
+        <li>Вставьте его сюда и нажмите «Подключить».</li>
+      </ol>
+      <div class="row">
+        <input id="token" type="text" placeholder="ghp_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="btn2 primary" id="connect" type="button">Подключить</button>
+      </div>
+    </div>
+    <div id="sync-on" hidden>
+      <p id="sync-info"></p>
+      <div class="row">
+        <button class="btn2" id="sync-now" type="button">Обновить сейчас</button>
+        <button class="btn2" id="disconnect" type="button">Отключить</button>
+      </div>
+    </div>
+    <details class="files" id="backup">
+      <summary>Копия в файл</summary>
+      <p id="backup-note"></p>
+      <div class="row">
+        <button class="btn2" id="save-copy" type="button">Сохранить копию в файл</button>
+        <button class="btn2" id="load-copy" type="button">Загрузить из файла</button>
+        <input type="file" id="file" accept=".html,.htm,text/html" hidden>
+      </div>
+    </details>
   </section>
 
   <div class="bar">
@@ -134,6 +176,7 @@ function setStatus(t, warn){ const s=$('status'); s.textContent=t||''; s.classLi
 const UP = '<svg viewBox="0 0 18 18" fill="none"><path d="M4 11l5-5 5 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const DOWN = '<svg viewBox="0 0 18 18" fill="none"><path d="M4 7l5 5 5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const rank = i => (typeof i.order === 'number') ? i.order : -i.created;
+const byRank = (a,b) => rank(a) - rank(b) || (a.id < b.id ? -1 : 1);
 
 function render(){
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', b.dataset.kind===kind);
@@ -143,7 +186,7 @@ function render(){
     $('c-'+k).textContent = left ? left : '';
   }
   const mine = items.filter(i=>i.kind===kind);
-  const open = mine.filter(i=>!i.done).sort((a,b)=>rank(a)-rank(b));
+  const open = mine.filter(i=>!i.done).sort(byRank);
   const done = mine.filter(i=>i.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
   const ul = $('list'); ul.innerHTML=''; ul.className = kind;
   if (!mine.length) {
@@ -198,9 +241,9 @@ function render(){
 
 let lastMoved = null;
 const saveTimers = {};
-function scheduleSave(){ save(); }
+function scheduleSave(it){ if (it) stamp(it); save(); }
 function move(it, dir){
-  const open = items.filter(i => i.kind === it.kind && !i.done).sort((a,b) => rank(a) - rank(b));
+  const open = items.filter(i => i.kind === it.kind && !i.done).sort(byRank);
   const idx = open.indexOf(it);
   if (idx < 0) return;
   const t = Math.max(0, Math.min(open.length - 1, idx + (isFinite(dir) ? dir : (dir < 0 ? -open.length : open.length))));
@@ -230,11 +273,13 @@ function holdable(btn, tap, hold){
 
 const KEY = 'spisok-offline-v1';
 let savedAt = 0, backupAt = 0;
+let tombs = {};   // id → время удаления
+const stamp = it => { it.upd = Date.now(); };
 
-function save(){ savedAt = Date.now(); persist(); }
+function save(){ savedAt = Date.now(); persist(); scheduleSync(); }
 function persist(){
   try {
-    localStorage.setItem(KEY, JSON.stringify({at: savedAt, backupAt, items}));
+    localStorage.setItem(KEY, JSON.stringify({at: savedAt, backupAt, items, tombs}));
   } catch(e) {
     setStatus('Браузер не даёт сохранить список. Сохраните копию в файл.', true);
   }
@@ -242,10 +287,11 @@ function persist(){
 }
 
 function toggle(it){
-  it.done = !it.done; it.doneAt = it.done ? Date.now() : 0;
+  it.done = !it.done; it.doneAt = it.done ? Date.now() : 0; stamp(it);
   render(); save();
 }
 function remove(it){
+  tombs[it.id] = Date.now();
   items = items.filter(x=>x.id!==it.id); render(); save();
 }
 
@@ -257,6 +303,8 @@ $('clear').onclick = () => {
     clearTimeout(confirmTimer); confirmTimer=setTimeout(render, 4000); return;
   }
   clearTimeout(confirmTimer);
+  const t = Date.now();
+  for (const i of items) if (i.kind===kind && i.done) tombs[i.id] = t;
   items = items.filter(i=>!(i.kind===kind && i.done)); render(); save();
 };
 
@@ -281,7 +329,7 @@ $('form').addEventListener('submit', e => {
   const now = Date.now();
   const openRanks = items.filter(i=>i.kind===kind && !i.done).map(rank);
   const top = openRanks.length ? Math.min(...openRanks) : 0;
-  parts.forEach((text, n) => items.push({id: newId(), kind, text, done:false, doneAt:0, created: now + (parts.length - n), order: top - parts.length + n}));
+  parts.forEach((text, n) => items.push({id: newId(), kind, text, done:false, doneAt:0, created: now + (parts.length - n), order: top - parts.length + n, upd: now}));
   render(); save();
   if (parts.length > 1) {
     setStatus('Добавлено пунктов: ' + parts.length);
@@ -296,8 +344,9 @@ function updateBackupNote(){
   const box = $('backup'), note = $('backup-note');
   const unsaved = savedAt > backupAt && items.length;
   const old = Date.now() - backupAt > 7*24*3600e3;
-  box.classList.toggle('stale', !!(unsaved && old));
-  if (!backupAt) note.innerHTML = 'Список хранится в памяти браузера на этом телефоне. <b>Копии в файле ещё нет</b> — сохраните её, чтобы ничего не потерять.';
+  box.classList.toggle('stale', !!(unsaved && old && !cfg.token));
+  if (cfg.token) note.textContent = 'Со включённой синхронизацией это не обязательно. Копия пригодится, если захотите сохранить список отдельно.' + (backupAt ? ' Последняя: ' + fmt(backupAt) + '.' : '');
+  else if (!backupAt) note.innerHTML = 'Без синхронизации список хранится только в памяти браузера на этом телефоне. <b>Копии в файле ещё нет.</b>';
   else note.innerHTML = 'Последняя копия в файл: ' + fmt(backupAt) + (unsaved ? '. <b>После неё есть изменения.</b>' : '. Все изменения в ней есть.');
 }
 
@@ -333,13 +382,172 @@ $('file').onchange = async () => {
     const d = new DOMParser().parseFromString(text, 'text/html');
     const data = JSON.parse(d.querySelector('#saved').textContent || '{}');
     if (!Array.isArray(data.items)) throw 0;
-    items = data.items; backupAt = data.backupAt || data.at || Date.now();
+    const t = Date.now();
+    items = data.items.map(i => ({...i, upd: t})); backupAt = data.backupAt || data.at || t;
     render(); save();
     setStatus('Загружено из файла: ' + items.length + ' пунктов.');
   } catch(e) {
     setStatus('Это не файл списка. Выберите файл spisok-….html, сохранённый этой программой.', true);
   }
 };
+
+// ---------- Синхронизация через GitHub (секретный gist) ----------
+const CFG = 'spisok-sync-v1', FILE = 'spisok.json';
+let cfg = {};
+try { cfg = JSON.parse(localStorage.getItem(CFG) || '{}') || {}; } catch(e) {}
+const storeCfg = () => { try { localStorage.setItem(CFG, JSON.stringify(cfg)); } catch(e) {} };
+let syncing = false, again = false, syncTimer = null, lastError = '';
+
+function gh(path, opts = {}) {
+  const headers = {Authorization: 'Bearer ' + cfg.token, Accept: 'application/vnd.github+json'};
+  if (opts.body) headers['Content-Type'] = 'application/json';
+  return fetch('https://api.github.com' + path, {...opts, headers, cache: 'no-store'}).then(async r => {
+    if (!r.ok) { const e = new Error('GitHub ' + r.status); e.status = r.status; throw e; }
+    return r.status === 204 ? null : r.json();
+  });
+}
+
+// Слияние: для каждого пункта побеждает более свежее изменение; удаление — тоже изменение
+function merge(a, b) {
+  const best = {};
+  const put = (id, u, item) => {
+    const cur = best[id];
+    if (!cur || u > cur.u || (u === cur.u && item === null)) best[id] = {u, item};
+  };
+  for (const src of [a, b]) {
+    for (const it of (src.items || [])) if (it && it.id) put(it.id, it.upd || it.created || 0, it);
+    for (const [id, u] of Object.entries(src.tombs || {})) put(id, u, null);
+  }
+  const old = Date.now() - 90 * 24 * 3600e3;
+  const out = {items: [], tombs: {}};
+  for (const [id, v] of Object.entries(best)) {
+    if (v.item) out.items.push(v.item);
+    else if (v.u > old) out.tombs[id] = v.u;
+  }
+  return out;
+}
+const canon = d => JSON.stringify({
+  items: [...(d.items || [])].sort((x, y) => x.id < y.id ? -1 : 1),
+  tombs: Object.fromEntries(Object.entries(d.tombs || {}).sort())
+});
+
+function scheduleSync(delay = 1200) {
+  if (!cfg.token) return;
+  clearTimeout(syncTimer); syncTimer = setTimeout(sync, delay);
+}
+
+async function sync() {
+  if (!cfg.token) return;
+  if (syncing) { again = true; return; }
+  if (!navigator.onLine) { lastError = 'offline'; showSync(); return; }
+  syncing = true; showSync();
+  try {
+    if (!cfg.gistId) {
+      const list = await gh('/gists?per_page=100');
+      const found = list.find(g => g.files && g.files[FILE]);
+      if (found) cfg.gistId = found.id;
+    }
+    let remote = {items: [], tombs: {}};
+    if (cfg.gistId) {
+      try {
+        const g = await gh('/gists/' + cfg.gistId);
+        const f = g.files && g.files[FILE];
+        if (f) {
+          const text = f.truncated ? await fetch(f.raw_url, {cache: 'no-store'}).then(r => r.text()) : f.content;
+          remote = JSON.parse(text || '{}');
+        }
+      } catch (e) {
+        if (e.status === 404) { cfg.gistId = null; } else throw e;
+      }
+    }
+    // сливаем сразу после получения, чтобы не потерять правку, сделанную во время загрузки
+    const merged = merge({items, tombs}, remote);
+    const m = canon(merged);
+    if (canon({items, tombs}) !== m) {
+      items = merged.items; tombs = merged.tombs;
+      savedAt = Date.now(); persist(); render();
+    }
+    if (canon(remote) !== m || !cfg.gistId) {
+      const body = {files: {[FILE]: {content: JSON.stringify(merged)}}};
+      if (cfg.gistId) await gh('/gists/' + cfg.gistId, {method: 'PATCH', body: JSON.stringify(body)});
+      else {
+        const g = await gh('/gists', {method: 'POST', body: JSON.stringify({description: 'Покупки и дела — данные приложения', public: false, ...body})});
+        cfg.gistId = g.id;
+      }
+    }
+    cfg.lastSync = Date.now(); lastError = ''; storeCfg();
+  } catch (e) {
+    lastError = e.status === 401 ? 'badtoken' : (e.status === 403 || e.status === 429) ? 'limit' : navigator.onLine ? 'error' : 'offline';
+  } finally {
+    syncing = false; showSync();
+    if (again) { again = false; scheduleSync(300); }
+  }
+}
+
+function showSync() {
+  const pill = $('sync-pill');
+  const on = !!cfg.token;
+  $('sync-setup').hidden = on; $('sync-on').hidden = !on;
+  pill.className = 'pill';
+  if (!on) { pill.textContent = 'не настроена'; updateBackupNote(); return; }
+  const when = cfg.lastSync ? new Date(cfg.lastSync).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}) : '';
+  if (syncing) pill.textContent = 'обновляю…';
+  else if (lastError === 'offline') pill.textContent = 'нет интернета';
+  else if (lastError === 'badtoken') { pill.textContent = 'ключ не подходит'; pill.classList.add('err'); }
+  else if (lastError === 'limit') { pill.textContent = 'GitHub просит подождать'; pill.classList.add('err'); }
+  else if (lastError) { pill.textContent = 'ошибка'; pill.classList.add('err'); }
+  else { pill.textContent = when ? 'обновлено в ' + when : 'подключена'; pill.classList.add('ok'); }
+  const who = cfg.login ? 'Аккаунт GitHub: ' + cfg.login + '. ' : '';
+  $('sync-info').textContent = lastError === 'badtoken'
+    ? 'GitHub не принял ключ: возможно, он удалён или истёк. Нажмите «Отключить» и подключите новый ключ.'
+    : lastError === 'offline'
+      ? who + 'Изменения сохранены на телефоне и уйдут в GitHub, когда появится интернет.'
+      : who + 'Список одинаковый на всех устройствах, где подключён этот аккаунт.';
+  updateBackupNote();
+}
+
+$('connect').onclick = async () => {
+  const token = $('token').value.trim();
+  if (!token) { setStatus('Вставьте ключ с GitHub в поле выше.', true); return; }
+  const btn = $('connect'); btn.disabled = true; btn.textContent = 'Проверяю…';
+  try {
+    const r = await fetch('https://api.github.com/user', {headers: {Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json'}, cache: 'no-store'});
+    if (r.status === 401) throw new Error('bad');
+    if (!r.ok) throw new Error('net');
+    const scopes = r.headers.get('x-oauth-scopes');
+    if (scopes !== null && !/\bgist\b/.test(scopes)) throw new Error('scope');
+    const u = await r.json();
+    cfg = {token, login: u.login}; storeCfg();
+    $('token').value = '';
+    setStatus('Синхронизация подключена.');
+    showSync(); await sync();
+  } catch (e) {
+    setStatus(e.message === 'bad' ? 'GitHub не принял ключ. Скопируйте его целиком, он начинается с ghp_.'
+      : e.message === 'scope' ? 'У ключа нет галочки gist. Создайте новый ключ по ссылке выше.'
+      : 'Не удалось связаться с GitHub. Проверьте интернет и попробуйте ещё раз.', true);
+  } finally { btn.disabled = false; btn.textContent = 'Подключить'; }
+};
+$('sync-now').onclick = () => sync();
+let discTimer = null;
+$('disconnect').onclick = () => {
+  const b = $('disconnect');
+  if (!b.classList.contains('confirm')) {
+    b.classList.add('confirm'); b.textContent = 'Точно отключить?';
+    clearTimeout(discTimer); discTimer = setTimeout(() => { b.classList.remove('confirm'); b.textContent = 'Отключить'; }, 4000);
+    return;
+  }
+  clearTimeout(discTimer); b.classList.remove('confirm'); b.textContent = 'Отключить';
+  cfg = {}; storeCfg(); lastError = ''; showSync();
+  setStatus('Синхронизация отключена. Список остался на этом устройстве.');
+};
+
+function startSync() {
+  showSync();
+  sync();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
+  window.addEventListener('online', () => sync());
+  setInterval(() => { if (!document.hidden) sync(); }, 60000);
+}
 
 // ---------- Установка и работа без интернета ----------
 let installEvt = null;
@@ -361,10 +569,11 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   try { local = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e) {}
   try { embedded = JSON.parse(document.getElementById('saved').textContent || 'null'); } catch(e) {}
   const pick = [local, embedded].filter(x => x && Array.isArray(x.items)).sort((a,b)=>(b.at||0)-(a.at||0))[0];
-  if (pick) { items = pick.items; savedAt = pick.at || 0; backupAt = Math.max(local?.backupAt||0, embedded?.backupAt||0); }
-  if (pick && pick !== local) { try { localStorage.setItem(KEY, JSON.stringify({at: savedAt, backupAt, items})); } catch(e) {} }
+  if (pick) { items = pick.items; tombs = pick.tombs || {}; savedAt = pick.at || 0; backupAt = Math.max(local?.backupAt||0, embedded?.backupAt||0); }
+  if (pick && pick !== local) { try { localStorage.setItem(KEY, JSON.stringify({at: savedAt, backupAt, items, tombs})); } catch(e) {} }
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch(e) {}
   render(); updateBackupNote();
+  startSync();
 })();
 </script>
 </body>
