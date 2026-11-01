@@ -616,6 +616,25 @@ function showGear() {
   $('open-settings').hidden = !(cfg.token || flag);
 }
 
+// Скрытый вход в настройки: удержать надпись «Список» около секунды (или нажать на неё 5 раз подряд)
+(function secretSettings() {
+  const h = document.querySelector('h1');
+  h.style.webkitUserSelect = 'none'; h.style.userSelect = 'none'; h.style.webkitTouchCallout = 'none';
+  let timer = null, taps = 0, tapTimer = null;
+  const unlock = () => {
+    try { localStorage.setItem('spisok-show-settings', '1'); } catch(e) {}
+    showGear(); $('open-settings').hidden = false;
+    $('open-settings').click();
+  };
+  h.addEventListener('pointerdown', () => { clearTimeout(timer); timer = setTimeout(unlock, 900); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => h.addEventListener(ev, () => clearTimeout(timer)));
+  h.addEventListener('contextmenu', e => e.preventDefault());
+  h.addEventListener('click', () => {
+    taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => taps = 0, 1500);
+    if (taps >= 5) { taps = 0; unlock(); }
+  });
+})();
+
 function startSync() {
   showGear();
   showSync();
