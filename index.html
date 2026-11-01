@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f7a52">
+<title>Покупки и дела</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+html{color-scheme:light}
+:root{padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}
+
+/* Layout: one narrow column, tabs on top, add-field pinned to the bottom for the thumb */
+:root{
+  --bg:#f3f6f4; --card:#ffffff; --ink:#17231e; --muted:#66756e; --line:#dde5e0;
+  --accent:#1f7a52; --accent-ink:#ffffff; --soft:#e2efe8; --danger:#b4462f;
+  --display:system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --body:system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1613; --card:#17211c; --ink:#e7efea; --muted:#8fa199; --line:#26332d;
+  --accent:#4cc28c; --accent-ink:#06150e; --soft:#1d2f26; --danger:#e8806a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1613; --card:#17211c; --ink:#e7efea; --muted:#8fa199; --line:#26332d;
+  --accent:#4cc28c; --accent-ink:#06150e; --soft:#1d2f26; --danger:#e8806a; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.4}
+.wrap{max-width:560px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 0}
+header{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:12px}
+h1{font-family:var(--display);font-weight:800;font-size:24px;letter-spacing:-.02em;margin:0}
+.date{color:var(--muted);font-size:14px;margin-right:auto}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:16px;background:var(--soft);padding:5px;border-radius:14px}
+.tab{appearance:none;border:0;background:transparent;color:var(--ink);font:600 16px var(--body);padding:12px 8px;border-radius:10px;cursor:pointer;display:flex;justify-content:center;gap:8px;align-items:center}
+.tab[aria-selected="true"]{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.count{font-size:13px;font-variant-numeric:tabular-nums;color:var(--muted);font-weight:500}
+.tab[aria-selected="true"] .count{color:var(--accent)}
+.status{margin-top:12px;font-size:14px;color:var(--muted);min-height:1em}
+.status.warn{color:var(--danger)}
+ul{list-style:none;margin:8px 0 0;padding:0;flex:1}
+li{display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)}
+.check{flex:none;width:30px;height:30px;border-radius:9px;border:2px solid var(--muted);background:transparent;cursor:pointer;display:grid;place-items:center;color:var(--accent-ink);padding:0}
+.todo .check{border-radius:50%}
+li.done .check{background:var(--accent);border-color:var(--accent)}
+.check svg{width:16px;height:16px;opacity:0}
+li.done .check svg{opacity:1}
+.text{flex:1;min-width:0;padding:10px 0;overflow-wrap:anywhere;cursor:pointer}
+li.done .text{color:var(--muted);text-decoration:line-through}
+.del{flex:none;width:40px;height:40px;border:0;background:transparent;color:var(--muted);font-size:22px;cursor:pointer;border-radius:10px}
+.del:active{background:var(--soft)}
+.section-label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:18px 0 0;font-weight:600}
+.empty{color:var(--muted);text-align:center;padding:40px 12px;line-height:1.5}
+.empty b{display:block;font-family:var(--display);font-weight:500;color:var(--ink);font-size:17px;margin-bottom:6px}
+.clear{align-self:flex-start;margin:14px 0 4px;appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);font:500 15px var(--body);padding:10px 14px;border-radius:10px;cursor:pointer}
+.clear.confirm{border-color:var(--danger);color:var(--danger)}
+.bar{position:sticky;bottom:0;background:var(--bg);padding:12px 0 calc(14px + env(safe-area-inset-bottom,0px));margin-top:8px}
+form{display:flex;gap:8px}
+input{flex:1;min-width:0;font:17px var(--body);padding:14px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);color:var(--ink)}
+input:focus{outline:none;border-color:var(--accent)}
+.add{flex:none;appearance:none;border:0;background:var(--accent);color:var(--accent-ink);font:800 22px var(--display);padding:0 18px;border-radius:12px;cursor:pointer}
+.add:disabled{opacity:.5}
+.arrows{flex:none;display:flex;gap:4px}
+.arrow{width:42px;height:42px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;cursor:pointer;display:grid;place-items:center;padding:0;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+.arrow svg{width:18px;height:18px}
+.arrow:active{background:var(--soft);border-color:var(--accent);color:var(--accent)}
+.arrow:disabled{opacity:.3;cursor:default}
+.del{width:36px}
+li.moved{animation:flash .5s ease-out}
+@keyframes flash{from{background:var(--soft)}to{background:transparent}}
+@media (prefers-reduced-motion: reduce){li.moved{animation:none}}
+.hint{font-size:13px;color:var(--muted);margin:10px 0 0}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.backup{margin:22px 0 6px;padding:14px;border:1px dashed var(--line);border-radius:12px;display:flex;flex-direction:column;gap:10px}
+.backup p{margin:0;font-size:14px;color:var(--muted)}
+.backup .row{display:flex;gap:8px;flex-wrap:wrap}
+.btn2{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);font:500 15px var(--body);padding:10px 14px;border-radius:10px;cursor:pointer}
+.btn2.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.backup.stale{border-color:var(--danger)}
+.backup.stale p b{color:var(--danger)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Список</h1>
+    <span class="date" id="today"></span>
+    <button class="btn2 primary" id="install" type="button" hidden>Установить</button>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-buy" aria-selected="true" data-kind="buy">Покупки <span class="count" id="c-buy"></span></button>
+    <button class="tab" role="tab" id="tab-todo" aria-selected="false" data-kind="todo">Дела <span class="count" id="c-todo"></span></button>
+  </div>
+
+  <div class="status" id="status"></div>
+  <ul id="list"></ul>
+  <button class="clear" id="clear" hidden></button>
+
+  <section class="backup" id="backup">
+    <p id="backup-note">Список хранится в памяти браузера на этом телефоне. Чтобы ничего не потерять, иногда сохраняйте копию в файл.</p>
+    <div class="row">
+      <button class="btn2 primary" id="save-copy" type="button">Сохранить копию в файл</button>
+      <button class="btn2" id="load-copy" type="button">Загрузить из файла</button>
+      <input type="file" id="file" accept=".html,.htm,text/html" hidden>
+    </div>
+  </section>
+
+  <div class="bar">
+    <form id="form" autocomplete="off">
+      <input id="input" placeholder="Что купить?" enterkeyhint="done" maxlength="200">
+      <button class="add" id="add" type="submit">+</button>
+    </form>
+  </div>
+</div>
+
+<script id="saved" type="application/json">null</script>
+<script>
+const $ = id => document.getElementById(id);
+let kind = 'buy';
+try { const k = localStorage.getItem('kind'); if (k === 'buy' || k === 'todo') kind = k; } catch(e) {}
+let items = [];
+let confirmTimer = null;
+
+$('today').textContent = new Date().toLocaleDateString('ru-RU', {weekday:'long', day:'numeric', month:'long'});
+
+const CHECK = '<svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3.2 3L13 4.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function setStatus(t, warn){ const s=$('status'); s.textContent=t||''; s.classList.toggle('warn', !!warn); }
+
+const UP = '<svg viewBox="0 0 18 18" fill="none"><path d="M4 11l5-5 5 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const DOWN = '<svg viewBox="0 0 18 18" fill="none"><path d="M4 7l5 5 5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const rank = i => (typeof i.order === 'number') ? i.order : -i.created;
+
+function render(){
+  for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', b.dataset.kind===kind);
+  $('input').placeholder = kind==='buy' ? 'Что купить? Можно списком' : 'Что сделать? Можно списком';
+  for (const k of ['buy','todo']) {
+    const left = items.filter(i=>i.kind===k && !i.done).length;
+    $('c-'+k).textContent = left ? left : '';
+  }
+  const mine = items.filter(i=>i.kind===kind);
+  const open = mine.filter(i=>!i.done).sort((a,b)=>rank(a)-rank(b));
+  const done = mine.filter(i=>i.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+  const ul = $('list'); ul.innerHTML=''; ul.className = kind;
+  if (!mine.length) {
+    {
+      const li = document.createElement('div'); li.className='empty';
+      li.innerHTML = kind==='buy'
+        ? '<b>Пока ничего не нужно</b>Напишите внизу, например «молоко», и нажмите +.'
+        : '<b>Дел нет</b>Добавьте первое дело в поле внизу.';
+      ul.appendChild(li);
+    }
+  }
+  const row = it => {
+    const li = document.createElement('li'); li.className = it.done ? 'done' : (it.id === lastMoved ? 'moved' : '');
+    const c = document.createElement('button'); c.className='check'; c.innerHTML=CHECK;
+    c.setAttribute('aria-label', it.done ? 'Вернуть' : 'Отметить');
+    c.onclick = () => toggle(it);
+    const t = document.createElement('span'); t.className='text'; t.textContent=it.text; t.onclick=()=>toggle(it);
+    const d = document.createElement('button'); d.className='del'; d.textContent='×'; d.setAttribute('aria-label','Удалить');
+    d.onclick = () => remove(it);
+    if (it.done) { li.append(c,t,d); }
+    else {
+      const ar = document.createElement('div'); ar.className='arrows';
+      const up = document.createElement('button'); up.className='arrow'; up.type='button'; up.innerHTML=UP; up.setAttribute('aria-label','Выше');
+      const dn = document.createElement('button'); dn.className='arrow'; dn.type='button'; dn.innerHTML=DOWN; dn.setAttribute('aria-label','Ниже');
+      const pos = open.indexOf(it);
+      up.disabled = pos === 0; dn.disabled = pos === open.length - 1;
+      holdable(up, () => move(it, -1), () => move(it, -Infinity));
+      holdable(dn, () => move(it, 1), () => move(it, Infinity));
+      ar.append(up, dn);
+      li.append(c,t,ar,d);
+    }
+    ul.appendChild(li);
+  };
+  open.forEach(row);
+  if (open.length > 1) {
+    const hint = document.createElement('li'); hint.className='hint'; hint.style.border='0';
+    hint.textContent = 'Стрелка — на одну строку. Удержите стрелку — в самый верх или низ.';
+    ul.appendChild(hint);
+  }
+  if (done.length) {
+    const lab = document.createElement('li'); lab.className='section-label'; lab.style.border='0';
+    lab.textContent = kind==='buy' ? 'Куплено' : 'Сделано';
+    ul.appendChild(lab);
+    done.forEach(row);
+  }
+  lastMoved = null;
+  const cl = $('clear');
+  cl.hidden = !done.length;
+  cl.classList.remove('confirm');
+  cl.textContent = (kind==='buy' ? 'Убрать купленное' : 'Убрать сделанное') + ' (' + done.length + ')';
+}
+
+let lastMoved = null;
+const saveTimers = {};
+function scheduleSave(){ save(); }
+function move(it, dir){
+  const open = items.filter(i => i.kind === it.kind && !i.done).sort((a,b) => rank(a) - rank(b));
+  const idx = open.indexOf(it);
+  if (idx < 0) return;
+  const t = Math.max(0, Math.min(open.length - 1, idx + (isFinite(dir) ? dir : (dir < 0 ? -open.length : open.length))));
+  if (t === idx) return;
+  open.splice(idx, 1); open.splice(t, 0, it);
+  const p = open[t-1], n = open[t+1];
+  it.order = (p && n) ? (rank(p) + rank(n)) / 2 : p ? rank(p) + 1 : rank(n) - 1;
+  lastMoved = it.id;
+  render();
+  scheduleSave(it);
+}
+function holdable(btn, tap, hold){
+  let timer = null, held = false;
+  btn.addEventListener('pointerdown', e => {
+    if (e.button || btn.disabled) return;
+    held = false;
+    timer = setTimeout(() => { held = true; timer = null; hold(); }, 450);
+  });
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  btn.addEventListener('pointerup', () => { if (timer) { cancel(); tap(); } });
+  btn.addEventListener('pointerleave', cancel);
+  btn.addEventListener('pointercancel', cancel);
+  btn.addEventListener('contextmenu', e => e.preventDefault());
+  btn.addEventListener('click', e => { if (e.detail === 0) tap(); }); // клавиатура
+}
+
+
+const KEY = 'spisok-offline-v1';
+let savedAt = 0, backupAt = 0;
+
+function save(){ savedAt = Date.now(); persist(); }
+function persist(){
+  try {
+    localStorage.setItem(KEY, JSON.stringify({at: savedAt, backupAt, items}));
+  } catch(e) {
+    setStatus('Браузер не даёт сохранить список. Сохраните копию в файл.', true);
+  }
+  updateBackupNote();
+}
+
+function toggle(it){
+  it.done = !it.done; it.doneAt = it.done ? Date.now() : 0;
+  render(); save();
+}
+function remove(it){
+  items = items.filter(x=>x.id!==it.id); render(); save();
+}
+
+$('clear').onclick = () => {
+  lastMoved = null;
+  const cl = $('clear');
+  if (!cl.classList.contains('confirm')) {
+    cl.classList.add('confirm'); cl.textContent='Точно убрать? Нажмите ещё раз';
+    clearTimeout(confirmTimer); confirmTimer=setTimeout(render, 4000); return;
+  }
+  clearTimeout(confirmTimer);
+  items = items.filter(i=>!(i.kind===kind && i.done)); render(); save();
+};
+
+for (const b of document.querySelectorAll('.tab')) b.onclick = () => {
+  kind = b.dataset.kind; try{localStorage.setItem('kind',kind)}catch(e){}
+  render();
+};
+
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+
+$('form').addEventListener('submit', e => {
+  e.preventDefault();
+  const raw = $('input').value.trim();
+  if (!raw) return;
+  // Голосовая фраза «молоко, хлеб и яйца» → три пункта
+  const parts = raw.split(/\s*(?:[,;\n]+|\.\s+|\s+и\s+|\s+а также\s+|\s+ещё\s+|\s+еще\s+)\s*/i)
+    .map(s => s.replace(/^(и|ещё|еще)\s+/i,'').replace(/[.!?…]+$/,'').trim())
+    .filter(Boolean)
+    .map(s => s.charAt(0).toUpperCase() + s.slice(1));
+  if (!parts.length) return;
+  $('input').value = '';
+  const now = Date.now();
+  const openRanks = items.filter(i=>i.kind===kind && !i.done).map(rank);
+  const top = openRanks.length ? Math.min(...openRanks) : 0;
+  parts.forEach((text, n) => items.push({id: newId(), kind, text, done:false, doneAt:0, created: now + (parts.length - n), order: top - parts.length + n}));
+  render(); save();
+  if (parts.length > 1) {
+    setStatus('Добавлено пунктов: ' + parts.length);
+    setTimeout(()=>{ if ($('status').textContent.startsWith('Добавлено')) setStatus(''); }, 3000);
+  }
+  $('input').focus();
+});
+
+// ---------- Копия в файл ----------
+const fmt = t => new Date(t).toLocaleString('ru-RU', {day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'});
+function updateBackupNote(){
+  const box = $('backup'), note = $('backup-note');
+  const unsaved = savedAt > backupAt && items.length;
+  const old = Date.now() - backupAt > 7*24*3600e3;
+  box.classList.toggle('stale', !!(unsaved && old));
+  if (!backupAt) note.innerHTML = 'Список хранится в памяти браузера на этом телефоне. <b>Копии в файле ещё нет</b> — сохраните её, чтобы ничего не потерять.';
+  else note.innerHTML = 'Последняя копия в файл: ' + fmt(backupAt) + (unsaved ? '. <b>После неё есть изменения.</b>' : '. Все изменения в ней есть.');
+}
+
+function buildFile(){
+  const doc = document.documentElement.cloneNode(true);
+  doc.querySelector('#list').innerHTML = '';
+  doc.querySelector('#status').textContent = '';
+  doc.querySelector('#saved').textContent =
+    JSON.stringify({at: savedAt, backupAt, items}).replace(/</g, '\\u003c');
+  for (const el of doc.querySelectorAll('input')) el.removeAttribute('value');
+  return '<!doctype html>\n' + doc.outerHTML;
+}
+
+$('save-copy').onclick = () => {
+  backupAt = Date.now(); if (savedAt > backupAt) savedAt = backupAt;
+  const html = buildFile();
+  const d = new Date();
+  const name = 'spisok-' + d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + '.html';
+  const url = URL.createObjectURL(new Blob([html], {type:'text/html'}));
+  const a = document.createElement('a'); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 10000);
+  persist();
+  setStatus('Копия сохранена в «Загрузки»: ' + name);
+};
+
+$('load-copy').onclick = () => $('file').click();
+$('file').onchange = async () => {
+  const f = $('file').files[0]; $('file').value = '';
+  if (!f) return;
+  try {
+    const text = await f.text();
+    const d = new DOMParser().parseFromString(text, 'text/html');
+    const data = JSON.parse(d.querySelector('#saved').textContent || '{}');
+    if (!Array.isArray(data.items)) throw 0;
+    items = data.items; backupAt = data.backupAt || data.at || Date.now();
+    render(); save();
+    setStatus('Загружено из файла: ' + items.length + ' пунктов.');
+  } catch(e) {
+    setStatus('Это не файл списка. Выберите файл spisok-….html, сохранённый этой программой.', true);
+  }
+};
+
+// ---------- Установка и работа без интернета ----------
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('install').hidden = false; });
+$('install').onclick = async () => {
+  if (!installEvt) return;
+  installEvt.prompt();
+  try { await installEvt.userChoice; } catch(e) {}
+  installEvt = null; $('install').hidden = true;
+};
+window.addEventListener('appinstalled', () => { $('install').hidden = true; setStatus('Приложение установлено, ищите иконку на главном экране.'); });
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+
+// ---------- Запуск ----------
+(function load(){
+  let local = null, embedded = null;
+  try { local = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e) {}
+  try { embedded = JSON.parse(document.getElementById('saved').textContent || 'null'); } catch(e) {}
+  const pick = [local, embedded].filter(x => x && Array.isArray(x.items)).sort((a,b)=>(b.at||0)-(a.at||0))[0];
+  if (pick) { items = pick.items; savedAt = pick.at || 0; backupAt = Math.max(local?.backupAt||0, embedded?.backupAt||0); }
+  if (pick && pick !== local) { try { localStorage.setItem(KEY, JSON.stringify({at: savedAt, backupAt, items})); } catch(e) {} }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch(e) {}
+  render(); updateBackupNote();
+})();
+</script>
+</body>
+</html>
