@@ -96,6 +96,14 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .files summary{font-size:14px;color:var(--muted);cursor:pointer;padding:4px 0}
 .files[open]{display:flex;flex-direction:column;gap:10px}
 .files.stale summary{color:var(--danger)}
+#view-list{flex:1;display:flex;flex-direction:column}
+.gear{position:relative;flex:none;width:40px;height:40px;border:0;background:transparent;color:var(--muted);border-radius:10px;cursor:pointer;display:grid;place-items:center;padding:0}
+.gear svg{width:22px;height:22px}
+.gear:active{background:var(--soft)}
+.gear.alert::after{content:"";position:absolute;top:7px;right:7px;width:9px;height:9px;border-radius:50%;background:var(--danger);border:2px solid var(--bg)}
+.back{align-self:flex-start;appearance:none;border:0;background:transparent;color:var(--accent);font:600 16px var(--body);padding:10px 0;cursor:pointer}
+#view-settings{display:flex;flex-direction:column}
+#view-settings .sync{margin-top:4px}
 </style>
 </head>
 <body>
@@ -104,17 +112,32 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <h1>Список</h1>
     <span class="date" id="today"></span>
     <button class="btn2 primary" id="install" type="button" hidden>Установить</button>
+    <button class="gear" id="open-settings" type="button" aria-label="Настройки">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
+    </button>
   </header>
 
+  <div class="status" id="status"></div>
+
+  <main id="view-list">
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" id="tab-buy" aria-selected="true" data-kind="buy">Покупки <span class="count" id="c-buy"></span></button>
     <button class="tab" role="tab" id="tab-todo" aria-selected="false" data-kind="todo">Дела <span class="count" id="c-todo"></span></button>
   </div>
 
-  <div class="status" id="status"></div>
   <ul id="list"></ul>
   <button class="clear" id="clear" hidden></button>
 
+  <div class="bar">
+    <form id="form" autocomplete="off">
+      <input id="input" placeholder="Что купить?" enterkeyhint="done" maxlength="200">
+      <button class="add" id="add" type="submit">+</button>
+    </form>
+  </div>
+  </main>
+
+  <section id="view-settings" hidden>
+  <button class="back" id="close-settings" type="button">← К списку</button>
   <section class="sync" id="syncbox">
     <div class="sync-head">
       <b>Синхронизация</b>
@@ -150,13 +173,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       </div>
     </details>
   </section>
-
-  <div class="bar">
-    <form id="form" autocomplete="off">
-      <input id="input" placeholder="Что купить?" enterkeyhint="done" maxlength="200">
-      <button class="add" id="add" type="submit">+</button>
-    </form>
-  </div>
+  </section>
 </div>
 
 <script id="saved" type="application/json">null</script>
@@ -489,6 +506,7 @@ function showSync() {
   const on = !!cfg.token;
   $('sync-setup').hidden = on; $('sync-on').hidden = !on;
   pill.className = 'pill';
+  $('open-settings').classList.toggle('alert', !!cfg.token && !!lastError && lastError !== 'offline');
   if (!on) { pill.textContent = 'не настроена'; updateBackupNote(); return; }
   const when = cfg.lastSync ? new Date(cfg.lastSync).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}) : '';
   if (syncing) pill.textContent = 'обновляю…';
@@ -520,6 +538,7 @@ $('connect').onclick = async () => {
     cfg = {token, login: u.login}; storeCfg();
     $('token').value = '';
     setStatus('Синхронизация подключена.');
+    setTimeout(() => $('close-settings').click(), 900);
     showSync(); await sync();
   } catch (e) {
     setStatus(e.message === 'bad' ? 'GitHub не принял ключ. Скопируйте его целиком, он начинается с ghp_.'
@@ -548,6 +567,15 @@ function startSync() {
   window.addEventListener('online', () => sync());
   setInterval(() => { if (!document.hidden) sync(); }, 60000);
 }
+
+// ---------- Экран настроек ----------
+function showSettings(on) {
+  $('view-list').hidden = on; $('view-settings').hidden = !on;
+  window.scrollTo(0, 0);
+}
+$('open-settings').onclick = () => { history.pushState({settings: 1}, ''); showSettings(true); };
+$('close-settings').onclick = () => { if (history.state && history.state.settings) history.back(); else showSettings(false); };
+window.addEventListener('popstate', () => showSettings(!!(history.state && history.state.settings)));
 
 // ---------- Установка и работа без интернета ----------
 let installEvt = null;

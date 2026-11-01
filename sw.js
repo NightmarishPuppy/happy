@@ -1,6 +1,6 @@
 // Хранит файлы приложения на телефоне, чтобы оно открывалось без интернета.
 // При изменении файлов увеличьте номер версии.
-const VERSION = 'spisok-v2';
+const VERSION = 'spisok-v3';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
