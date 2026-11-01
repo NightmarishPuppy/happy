@@ -118,7 +118,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <h1>Список</h1>
     <span class="date" id="today"></span>
     <button class="btn2 primary" id="install" type="button" hidden>Установить</button>
-    <button class="gear" id="open-settings" type="button" aria-label="Настройки">
+    <button class="gear" id="open-settings" type="button" aria-label="Настройки" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
     </button>
   </header>
@@ -595,7 +595,18 @@ $('disconnect').onclick = () => {
   setStatus('Синхронизация отключена. Список остался на этом устройстве.');
 };
 
+// Шестерёнку видят только те, у кого включена синхронизация или кто открыл ссылку с ?sync
+function showGear() {
+  let flag = false;
+  try {
+    if (/[?&]sync\b/.test(location.search)) localStorage.setItem('spisok-show-settings', '1');
+    flag = localStorage.getItem('spisok-show-settings') === '1';
+  } catch(e) {}
+  $('open-settings').hidden = !(cfg.token || flag);
+}
+
 function startSync() {
+  showGear();
   showSync();
   sync();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
