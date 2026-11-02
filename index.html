@@ -539,9 +539,10 @@ function editor(it) {
   ok.onclick = () => { name.onchange(); editingId = null; render(); };
   row.appendChild(ok);
   box.append(nameL, dueL, quick, row);
-  if (it.due && !isApple) {
-    const f = document.createElement('button'); f.type = 'button'; f.className = 'ics'; f.textContent = 'Другой календарь (Outlook и т. п.)? Скачать файл события';
-    f.onclick = () => openIcs(it);
+  if (it.due) {
+    const f = document.createElement('button'); f.type = 'button'; f.className = 'ics';
+    f.textContent = isApple ? 'Календарь не открылся? Открыть событие другим способом' : 'Другой календарь (Outlook и т. п.)? Скачать файл события';
+    f.onclick = () => openIcs(it, isApple);
     box.appendChild(f);
   }
   li.appendChild(box);
@@ -564,13 +565,21 @@ function icsText(title, start) {
     'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:' + esc(title),'TRIGGER:PT0M','END:VALARM',
     'END:VEVENT','END:VCALENDAR'].join('\r\n');
 }
-function openIcs(it) {
-  const title = it.text;
-  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-    location.href = 'cal.ics?t=' + encodeURIComponent(title) + '&s=' + encodeURIComponent(it.due);
-    return;
+// Файл события: сначала через сервис-воркер (настоящий адрес, его понимает Safari),
+// если тот ещё не готов — ждём его до 2 секунд, потом запасной путь
+function icsDataUrl(it) { return 'data:text/calendar;charset=utf-8,' + encodeURIComponent(icsText(it.text, it.due)); }
+function icsUrl(it) { return 'cal.ics?t=' + encodeURIComponent(it.text) + '&s=' + encodeURIComponent(it.due); }
+async function openIcs(it, forceFile) {
+  const sw = navigator.serviceWorker;
+  if (!forceFile && sw) {
+    if (!sw.controller) {
+      try { await Promise.race([sw.ready, new Promise(r => setTimeout(r, 2000))]); } catch(e) {}
+      if (!sw.controller) await new Promise(r => { sw.addEventListener('controllerchange', r, {once: true}); setTimeout(r, 800); });
+    }
+    if (sw.controller) { location.href = icsUrl(it); return; }
   }
-  const url = URL.createObjectURL(new Blob([icsText(title, it.due)], {type: 'text/calendar'}));
+  if (isApple) { location.href = icsDataUrl(it); return; }
+  const url = URL.createObjectURL(new Blob([icsText(it.text, it.due)], {type: 'text/calendar'}));
   const a = document.createElement('a'); a.href = url; a.download = 'napominanie.ics';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 20000);
@@ -580,13 +589,13 @@ function googleCalUrl(it) {
   const d = new Date(it.due), e = new Date(d.getTime() + 30 * 60000);
   const f = x => x.getFullYear() + pad2(x.getMonth()+1) + pad2(x.getDate()) + 'T' + pad2(x.getHours()) + pad2(x.getMinutes()) + '00';
   let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch(e) {}
-  return 'https://calendar.google.com/calendar/event?action=TEMPLATE&text=' + encodeURIComponent(it.text)
+  return 'https://calendar.google.com/calendar/r/eventedit?text=' + encodeURIComponent(it.text)
     + '&dates=' + f(d) + '/' + f(e) + (tz ? '&ctz=' + encodeURIComponent(tz) : '');
 }
 // iPhone/iPad/Mac — встроенный календарь Apple через файл события; остальные — Google Календарь
 function toCalendar(it) {
   if (!it.due) return;
-  if (isApple) { openIcs(it); return; }
+  if (isApple) { setStatus('Открываю календарь…'); setTimeout(() => { if ($('status').textContent.startsWith('Открываю')) setStatus(''); }, 4000); openIcs(it); return; }
   if (!navigator.onLine) { setStatus('Для Google Календаря нужен интернет. Без него можно скачать файл события в редактировании пункта.', true); return; }
   const web = googleCalUrl(it);
   if (isAndroid) {
