@@ -115,6 +115,21 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .howto li{display:list-item;border:0;padding:0}
 .howto button{align-self:flex-start}
 .ico{display:inline-block;vertical-align:-3px;width:18px;height:18px;color:var(--accent)}
+.tx{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:8px 0}
+.tx .text{flex:none;padding:2px 0;width:100%}
+.due{appearance:none;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:500 13px var(--body);padding:4px 9px;border-radius:999px;cursor:pointer;font-variant-numeric:tabular-nums}
+.due svg{width:14px;height:14px;flex:none}
+.due.today{border-color:var(--accent);color:var(--accent)}
+.due.late{border-color:var(--danger);color:var(--danger)}
+li.done .due{opacity:.6}
+li.editor{display:block;border-bottom:1px solid var(--line);padding:4px 0 14px}
+.ed{display:flex;flex-direction:column;gap:10px;background:var(--soft);border-radius:12px;padding:12px}
+.ed label{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:5px}
+.ed input{font:16px var(--body);padding:10px 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);width:100%;box-sizing:border-box}
+.ed .row{display:flex;gap:8px;flex-wrap:wrap}
+.ed .quick{display:flex;gap:6px;flex-wrap:wrap}
+.ed .quick button{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);font:500 14px var(--body);padding:7px 11px;border-radius:999px;cursor:pointer}
+.ed .ics{font-size:13px;color:var(--muted);background:none;border:0;padding:0;text-decoration:underline;cursor:pointer;align-self:flex-start;font-family:var(--body)}
 </style>
 </head>
 <body>
@@ -216,7 +231,7 @@ const byRank = (a,b) => rank(a) - rank(b) || (a.id < b.id ? -1 : 1);
 
 function render(){
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', b.dataset.kind===kind);
-  $('input').placeholder = kind==='buy' ? 'Что купить? Можно списком' : 'Что сделать?';
+  $('input').placeholder = kind==='buy' ? 'Что купить? Например: хлеб завтра' : 'Что сделать? Например: позвонить в пятницу';
   for (const k of ['buy','todo']) {
     const left = items.filter(i=>i.kind===k && !i.done).length;
     $('c-'+k).textContent = left ? left : '';
@@ -239,7 +254,20 @@ function render(){
     const c = document.createElement('button'); c.className='check'; c.innerHTML=CHECK;
     c.setAttribute('aria-label', it.done ? 'Вернуть' : 'Отметить');
     c.onclick = () => toggle(it);
-    const t = document.createElement('span'); t.className='text'; t.textContent=it.text; t.onclick=()=>toggle(it);
+    const t = document.createElement('div'); t.className='tx';
+    const tt = document.createElement('span'); tt.className='text'; tt.textContent=it.text;
+    tt.onclick = () => { editingId = editingId === it.id ? null : it.id; render(); };
+    t.appendChild(tt);
+    if (it.due) {
+      const ch = document.createElement('button'); ch.type='button'; ch.className='due';
+      const dd = new Date(it.due), now0 = new Date();
+      if (!it.done && dd < now0) ch.classList.add('late');
+      else if (dd.toDateString() === now0.toDateString()) ch.classList.add('today');
+      ch.innerHTML = BELL; ch.append(dueLabel(it.due));
+      ch.setAttribute('aria-label', 'Добавить в календарь: ' + dueLabel(it.due));
+      ch.onclick = e => { e.stopPropagation(); toCalendar(it); };
+      t.appendChild(ch);
+    }
     const d = document.createElement('button'); d.className='del'; d.textContent='×'; d.setAttribute('aria-label','Удалить');
     d.onclick = () => remove(it);
     if (it.done) { li.append(c,t,d); }
@@ -255,6 +283,7 @@ function render(){
       li.append(c,t,ar,d);
     }
     ul.appendChild(li);
+    if (editingId === it.id) ul.appendChild(editor(it));
   };
   open.forEach(row);
   if (open.length > 1) {
@@ -349,12 +378,216 @@ for (const b of document.querySelectorAll('.tab')) b.onclick = () => {
   render();
 };
 
+// ---------- Даты в тексте: «хлеб завтра», «подарок 1 декабря в 18:00» ----------
+const MONTHS = ['январ','феврал','март','апрел','ма','июн','июл','август','сентябр','октябр','ноябр','декабр'];
+const MONTH_RE = '(январ[яь]|феврал[яь]|марта?|апрел[яь]|ма[яй]|июн[яь]|июл[яь]|августа?|сентябр[яь]|октябр[яь]|ноябр[яь]|декабр[яь])';
+const WD = [
+  ['воскресенье','воскресенья','воскресенью'],
+  ['понедельник','понедельника','понедельнику'],
+  ['вторник','вторника','вторнику'],
+  ['среду','среды','среде'],
+  ['четверг','четверга','четвергу'],
+  ['пятницу','пятницы','пятнице'],
+  ['субботу','субботы','субботе']
+];
+const NUMW = {'один':1,'одну':1,'два':2,'две':2,'три':3,'четыре':4,'пять':5,'шесть':6,'семь':7,'восемь':8,'девять':9,'десять':10};
+const pad2 = n => String(n).padStart(2, '0');
+const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const monthIdx = w => { w = w.toLowerCase(); if (w.startsWith('мар')) return 2; if (w.startsWith('ма')) return 4; return MONTHS.findIndex(m => w.startsWith(m)); };
+const toLocalISO = d => d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+const DEFAULT_HOUR = 10;
+
+function parseDue(text, now = new Date()) {
+  let s = ' ' + text + ' ';
+  let date = null, hh = null, mm = 0;
+  const today = dayStart(now);
+  const B = '(?=[\\s,.!?;]|$)';
+  const take = (re, fn) => {
+    if (date) return;
+    const m = s.match(re);
+    if (!m) return;
+    const r = fn(m);
+    if (r) { date = r; s = s.slice(0, m.index) + ' ' + s.slice(m.index + m[0].length); }
+  };
+
+  // время: «в 18:00», «в 9 утра», «к 7 вечера», «в 18 ч»
+  const tm = s.match(/\s(?:в|к|на)\s+(\d{1,2})(?:[:.](\d{2}))?(?:\s*(?:ч(?:ас(?:а|ов)?)?\.?))?(?:\s+(утра|дня|вечера|ночи))?(?=[\s,.!?;]|$)/i);
+  if (tm && (tm[2] || tm[3] || /ч/i.test(tm[0])) ) {
+    let h = +tm[1]; const mi = tm[2] ? +tm[2] : 0; const part = (tm[3] || '').toLowerCase();
+    if ((part === 'дня' || part === 'вечера') && h < 12) h += 12;
+    if (part === 'ночи' && h === 12) h = 0;
+    if (h <= 23 && mi <= 59) { hh = h; mm = mi; s = s.slice(0, tm.index) + ' ' + s.slice(tm.index + tm[0].length); }
+  }
+
+  take(new RegExp('\\s(?:на\\s+)?послезавтра' + B, 'i'), () => addDays(today, 2));
+  take(new RegExp('\\s(?:на\\s+)?завтра' + B, 'i'), () => addDays(today, 1));
+  take(new RegExp('\\s(?:на\\s+)?сегодня' + B, 'i'), () => today);
+
+  // «через 3 дня», «через неделю», «через 2 месяца»
+  take(new RegExp('\\s(?:через|спустя)\\s+(\\d+|один|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять)?\\s*(день|дня|дней|сутки|недел[юиь]|месяц|месяца|месяцев|год|года|лет)' + B, 'i'), m => {
+    const n = m[1] ? (NUMW[m[1].toLowerCase()] || +m[1]) : 1;
+    const u = m[2].toLowerCase();
+    if (u.startsWith('д') || u === 'сутки') return addDays(today, n);
+    if (u.startsWith('нед')) return addDays(today, 7 * n);
+    if (u.startsWith('мес')) return new Date(today.getFullYear(), today.getMonth() + n, today.getDate());
+    return new Date(today.getFullYear() + n, today.getMonth(), today.getDate());
+  });
+
+  take(new RegExp('\\sна\\s+следующей\\s+неделе' + B, 'i'), () => addDays(today, ((8 - today.getDay()) % 7) || 7));
+  take(new RegExp('\\s(?:в|на)\\s+выходн(?:ые|ых)' + B, 'i'), () => { const k = (6 - today.getDay() + 7) % 7; return addDays(today, k); });
+  take(new RegExp('\\s(?:в|на)\\s+следующем\\s+месяце' + B, 'i'), () => new Date(today.getFullYear(), today.getMonth() + 1, 1));
+  take(new RegExp('\\s(?:в|к)\\s+конц[еау]\\s+месяца' + B, 'i'), () => new Date(today.getFullYear(), today.getMonth() + 1, 0));
+  take(new RegExp('\\s(?:в|к)\\s+конц[еау]\\s+недели' + B, 'i'), () => addDays(today, (7 - today.getDay()) % 7));
+
+  // «1 декабря», «к 31 декабря 2026», «до 5 марта»
+  take(new RegExp('\\s(?:(?:к|до|на)\\s+)?(\\d{1,2})(?:-?го)?\\s+' + MONTH_RE + '(?:\\s+(\\d{4})(?:\\s*(?:г\\.?|года))?)?' + B, 'i'), m => {
+    const d = +m[1], mo = monthIdx(m[2]); if (mo < 0 || d < 1 || d > 31) return null;
+    let y = m[3] ? +m[3] : today.getFullYear();
+    let r = new Date(y, mo, d);
+    if (!m[3] && r < today) r = new Date(y + 1, mo, d);
+    return r.getMonth() === mo ? r : null;
+  });
+
+  // «31.12», «1/12/2026»
+  take(new RegExp('\\s(?:(?:к|до|на)\\s+)?(\\d{1,2})[./](\\d{2}|\\d{1,2}(?=[./]\\d{2,4}))(?:[./](\\d{2,4}))?' + B, 'i'), m => {
+    const d = +m[1], mo = +m[2] - 1; if (mo < 0 || mo > 11 || d < 1 || d > 31) return null;
+    let y = m[3] ? (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : today.getFullYear();
+    let r = new Date(y, mo, d);
+    if (!m[3] && r < today) r = new Date(y + 1, mo, d);
+    return r.getMonth() === mo ? r : null;
+  });
+
+  // «1 числа», «к 15-му»
+  take(new RegExp('\\s(?:(?:к|до|на)\\s+)?(\\d{1,2})(?:-?(?:го|му|е))?\\s+числ[ау]' + B, 'i'), m => {
+    const d = +m[1]; if (d < 1 || d > 31) return null;
+    let r = new Date(today.getFullYear(), today.getMonth(), d);
+    if (r < today || r.getDate() !== d) r = new Date(today.getFullYear(), today.getMonth() + 1, d);
+    return r;
+  });
+
+  // «в пятницу», «во вторник», «до пятницы», «к понедельнику», «в следующую среду»
+  for (let wd = 0; wd < 7 && !date; wd++) {
+    const [acc, gen, dat] = WD[wd];
+    take(new RegExp('\\s(?:(?:в|во)\\s+(?:следующ(?:ий|ую|ее)\\s+)?' + acc + '|до\\s+' + gen + '|к\\s+' + dat + ')' + B, 'i'), m => {
+      let k = (wd - today.getDay() + 7) % 7; if (k === 0) k = 7;
+      if (/следующ/i.test(m[0]) && k < 7 && wd !== 0 && today.getDay() !== 0 && wd > today.getDay()) k += 7;
+      return addDays(today, k);
+    });
+  }
+
+  if (!date && hh !== null) {
+    date = today;
+    if (hh * 60 + mm <= now.getHours() * 60 + now.getMinutes()) date = addDays(today, 1);
+  }
+  if (!date) return {text, due: null};
+  const r = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hh ?? DEFAULT_HOUR, hh === null ? 0 : mm);
+  const clean = s.replace(/\s+([,.!?;])/g, '$1').replace(/\s{2,}/g, ' ').replace(/^[\s,;:—-]+|[\s,;:—-]+$/g, '').trim();
+  return {text: clean || text, due: toLocalISO(r)};
+}
+
+// «завтра, 10:00», «пт, 5 дек · 18:00»
+function dueLabel(due, now = new Date()) {
+  const d = new Date(due);
+  const diff = Math.round((dayStart(d) - dayStart(now)) / 864e5);
+  const time = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  let day;
+  if (diff === 0) day = 'сегодня';
+  else if (diff === 1) day = 'завтра';
+  else if (diff === 2) day = 'послезавтра';
+  else if (diff === -1) day = 'вчера';
+  else {
+    const wd = ['вс','пн','вт','ср','чт','пт','сб'][d.getDay()];
+    const mon = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'][d.getMonth()];
+    day = wd + ', ' + d.getDate() + ' ' + mon + (d.getFullYear() !== now.getFullYear() ? ' ' + d.getFullYear() : '');
+  }
+  return day + ' · ' + time;
+}
+
+function editor(it) {
+  const li = document.createElement('li'); li.className = 'editor';
+  const box = document.createElement('div'); box.className = 'ed';
+  const nameL = document.createElement('label'); nameL.textContent = 'Название';
+  const name = document.createElement('input'); name.id = 'ed-name'; name.value = it.text; name.maxLength = 200;
+  name.onchange = () => { const v = name.value.trim(); if (v && v !== it.text) { it.text = v; stamp(it); save(); render(); } };
+  nameL.appendChild(name);
+  const dueL = document.createElement('label'); dueL.textContent = 'Дата и время';
+  const when = document.createElement('input'); when.id = 'ed-due'; when.type = 'datetime-local'; when.value = it.due || '';
+  when.onchange = () => { it.due = when.value || null; stamp(it); save(); render(); };
+  dueL.appendChild(when);
+  const quick = document.createElement('div'); quick.className = 'quick';
+  const today = dayStart(new Date());
+  const setDay = d => { const old = it.due ? new Date(it.due) : null; d.setHours(old ? old.getHours() : DEFAULT_HOUR, old ? old.getMinutes() : 0); it.due = toLocalISO(d); stamp(it); save(); render(); };
+  [['Сегодня', () => today], ['Завтра', () => addDays(today, 1)], ['В выходные', () => addDays(today, (6 - today.getDay() + 7) % 7)], ['Через неделю', () => addDays(today, 7)]]
+    .forEach(([label, fn]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = () => setDay(fn()); quick.appendChild(b); });
+  const row = document.createElement('div'); row.className = 'row';
+  if (it.due) {
+    const cal = document.createElement('button'); cal.type = 'button'; cal.className = 'btn2 primary'; cal.textContent = 'Добавить в календарь';
+    cal.onclick = () => toCalendar(it);
+    const clr = document.createElement('button'); clr.type = 'button'; clr.className = 'btn2'; clr.textContent = 'Убрать дату';
+    clr.onclick = () => { it.due = null; stamp(it); save(); render(); };
+    row.append(cal, clr);
+  }
+  const ok = document.createElement('button'); ok.type = 'button'; ok.className = 'btn2'; ok.textContent = 'Готово';
+  ok.onclick = () => { name.onchange(); editingId = null; render(); };
+  row.appendChild(ok);
+  box.append(nameL, dueL, quick, row);
+  if (it.due && isAndroid) {
+    const f = document.createElement('button'); f.type = 'button'; f.className = 'ics'; f.textContent = 'Календарь не открылся? Скачать файл события';
+    f.onclick = () => openIcs(it);
+    box.appendChild(f);
+  }
+  li.appendChild(box);
+  return li;
+}
+
+const BELL = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg>';
+let editingId = null;
+
+// Открыть системный календарь с уже заполненным событием
+const isAndroid = /Android/i.test(navigator.userAgent);
+function icsText(title, start) {
+  const d = new Date(start), e = new Date(d.getTime() + 30 * 60000);
+  const f = x => x.getFullYear() + pad2(x.getMonth()+1) + pad2(x.getDate()) + 'T' + pad2(x.getHours()) + pad2(x.getMinutes()) + '00';
+  const esc = t => String(t).replace(/\\/g, '\\\\').replace(/[,;]/g, m => '\\' + m).replace(/\n/g, '\\n');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Spisok//RU','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+    'UID:' + Date.now() + Math.random().toString(36).slice(2) + '@spisok','DTSTAMP:' + stamp,
+    'DTSTART:' + f(d),'DTEND:' + f(e),'SUMMARY:' + esc(title),
+    'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:' + esc(title),'TRIGGER:PT0M','END:VALARM',
+    'END:VEVENT','END:VCALENDAR'].join('\r\n');
+}
+function openIcs(it) {
+  const title = it.text;
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    location.href = 'cal.ics?t=' + encodeURIComponent(title) + '&s=' + encodeURIComponent(it.due);
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([icsText(title, it.due)], {type: 'text/calendar'}));
+  const a = document.createElement('a'); a.href = url; a.download = 'napominanie.ics';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 20000);
+}
+function toCalendar(it) {
+  if (!it.due) return;
+  if (isAndroid) {
+    const b = new Date(it.due).getTime();
+    location.href = 'intent:#Intent;action=android.intent.action.INSERT;type=vnd.android.cursor.item/event;'
+      + 'S.title=' + encodeURIComponent(it.text) + ';l.beginTime=' + b + ';l.endTime=' + (b + 30 * 60000) + ';end';
+    return;
+  }
+  openIcs(it);
+}
+
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
 
 $('form').addEventListener('submit', e => {
   e.preventDefault();
-  const raw = $('input').value.trim();
-  if (!raw) return;
+  const typed = $('input').value.trim();
+  if (!typed) return;
+  // «хлеб и молоко завтра» → дата для всех пунктов фразы
+  const parsed = kind === 'buy' ? parseDue(typed) : {text: typed, due: null};
+  const raw = parsed.text;
   // Голосовая фраза «молоко, хлеб и яйца» → три пункта
   // Покупки: «молоко, хлеб и яйца» → три пункта. Дела: фраза остаётся целиком («помыть и заклеить окна»)
   const parts = (kind === 'buy'
@@ -363,13 +596,15 @@ $('form').addEventListener('submit', e => {
       : raw.split(/\n+/))
     .map(s => s.replace(/[.!?…]+$/,'').trim())
     .filter(Boolean)
-    .map(s => s.charAt(0).toUpperCase() + s.slice(1));
+    .map(s => s.charAt(0).toUpperCase() + s.slice(1))
+    .map(s => kind === 'buy' ? {text: s, due: parsed.due} : parseDue(s))
+    .map(x => ({text: x.text.charAt(0).toUpperCase() + x.text.slice(1), due: x.due}));
   if (!parts.length) return;
   $('input').value = '';
   const now = Date.now();
   const openRanks = items.filter(i=>i.kind===kind && !i.done).map(rank);
   const top = openRanks.length ? Math.min(...openRanks) : 0;
-  parts.forEach((text, n) => items.push({id: newId(), kind, text, done:false, doneAt:0, created: now + (parts.length - n), order: top - parts.length + n, upd: now}));
+  parts.forEach(({text, due}, n) => items.push({id: newId(), kind, text, due, done:false, doneAt:0, created: now + (parts.length - n), order: top - parts.length + n, upd: now}));
   render(); save();
   if (parts.length > 1) {
     setStatus('Добавлено пунктов: ' + parts.length);

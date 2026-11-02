@@ -1,6 +1,6 @@
 // Хранит файлы приложения на телефоне, чтобы оно открывалось без интернета.
 // При изменении файлов увеличьте номер версии.
-const VERSION = 'spisok-v9';
+const VERSION = 'spisok-v10';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -13,9 +13,29 @@ self.addEventListener('activate', e => {
     .then(() => self.clients.claim()));
 });
 
+// Событие для календаря: cal.ics?t=Название&s=2026-12-01T10:00 — работает и без интернета
+function pad2(n) { return String(n).padStart(2, '0'); }
+function icsResponse(url) {
+  const title = url.searchParams.get('t') || 'Напоминание';
+  const start = new Date(url.searchParams.get('s'));
+  if (isNaN(start)) return new Response('Нет даты', {status: 400});
+  const end = new Date(start.getTime() + 30 * 60000);
+  const f = x => x.getFullYear() + pad2(x.getMonth()+1) + pad2(x.getDate()) + 'T' + pad2(x.getHours()) + pad2(x.getMinutes()) + '00';
+  const esc = t => String(t).replace(/\\/g, '\\\\').replace(/[,;]/g, m => '\\' + m).replace(/\n/g, '\\n');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const body = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Spisok//RU','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+    'UID:' + Date.now() + Math.random().toString(36).slice(2) + '@spisok','DTSTAMP:' + stamp,
+    'DTSTART:' + f(start),'DTEND:' + f(end),'SUMMARY:' + esc(title),
+    'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:' + esc(title),'TRIGGER:PT0M','END:VALARM',
+    'END:VEVENT','END:VCALENDAR'].join('\r\n');
+  return new Response(body, {headers: {'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'inline; filename="napominanie.ics"'}});
+}
+
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  const u = new URL(req.url);
+  if (u.pathname.endsWith('/cal.ics')) { e.respondWith(icsResponse(u)); return; }
   // Сама страница: сначала из сети (чтобы обновления приходили сразу), без сети — сохранённая копия
   if (req.mode === 'navigate') {
     e.respondWith((async () => {
