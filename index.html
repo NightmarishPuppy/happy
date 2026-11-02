@@ -604,8 +604,9 @@ function toCalendar(it) {
       + 'S.browser_fallback_url=' + encodeURIComponent(web) + ';end';
     return;
   }
-  const w = window.open(web, '_blank', 'noopener');
-  if (!w) location.href = web;
+  // только новая вкладка браузера; само окно приложения остаётся со списком
+  const a = document.createElement('a'); a.href = web; a.target = '_blank'; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
 }
 
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);

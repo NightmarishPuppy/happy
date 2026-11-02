@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Проверка календаря</title>
+<style>
+:root{--bg:#f3f6f4;--card:#fff;--ink:#17231e;--muted:#66756e;--line:#dde5e0;--accent:#1f7a52}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1613;--card:#17211c;--ink:#e7efea;--muted:#8fa199;--line:#26332d;--accent:#4cc28c;color-scheme:dark}}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.45 system-ui,-apple-system,Roboto,sans-serif}
+.w{max-width:520px;margin:0 auto;padding:20px max(16px,env(safe-area-inset-left,0px)) 40px}
+h1{font-size:22px;margin:0 0 6px}p{color:var(--muted);margin:0 0 18px;font-size:15px}
+a{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;color:var(--ink);text-decoration:none}
+a b{flex:none;width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:17px}
+a span{font-size:15px}
+</style></head><body><div class="w">
+<h1>Проверка календаря</h1>
+<p>Нажмите каждый вариант по очереди и вернитесь сюда. Запомните, какой открыл Google Календарь <b>сразу с названием «Тест хлеб» и датой завтра, 10:00</b>. Напишите номер(а).</p>
+<div id="list"></div>
+</div>
+<script>
+const p2 = n => String(n).padStart(2,'0');
+const d = new Date(); d.setDate(d.getDate()+1); d.setHours(10,0,0,0);
+const e = new Date(d.getTime()+30*60000);
+const f = x => x.getFullYear()+p2(x.getMonth()+1)+p2(x.getDate())+'T'+p2(x.getHours())+p2(x.getMinutes())+'00';
+let tz=''; try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(_){}
+const q = 'text='+encodeURIComponent('Тест хлеб')+'&dates='+f(d)+'/'+f(e)+(tz?'&ctz='+encodeURIComponent(tz):'');
+const host = 'calendar.google.com/calendar/';
+const intent = (path) => 'intent://'+host+path+'#Intent;scheme=https;package=com.google.android.calendar;S.browser_fallback_url='+encodeURIComponent('https://'+host+path)+';end';
+const V = [
+  ['Ссылка «event»', 'https://'+host+'event?action=TEMPLATE&'+q],
+  ['Ссылка «render»', 'https://'+host+'render?action=TEMPLATE&'+q],
+  ['Ссылка «eventedit»', 'https://'+host+'r/eventedit?'+q],
+  ['Прямо в приложение, «event»', intent('event?action=TEMPLATE&'+q)],
+  ['Прямо в приложение, «render»', intent('render?action=TEMPLATE&'+q)],
+  ['Прямо в приложение, «eventedit» (как сейчас)', intent('r/eventedit?'+q)],
+];
+document.getElementById('list').innerHTML = V.map((v,i)=>'<a href="'+v[1].replace(/"/g,'&quot;')+'"><b>'+(i+1)+'</b><span>'+v[0]+'</span></a>').join('');
+</script></body></html>
