@@ -399,6 +399,7 @@ const toLocalISO = d => d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad
 const DEFAULT_HOUR = 10;
 
 function parseDue(text, now = new Date()) {
+  text = String(text).replace(/[\u00A0\u2000-\u200D\u2028\u2029\u202F\u205F\u3000\uFEFF]/g, ' ').replace(/\s+/g, ' ').trim();
   let s = ' ' + text + ' ';
   let date = null, hh = null, mm = 0;
   const today = dayStart(now);
@@ -509,7 +510,13 @@ function editor(it) {
   const box = document.createElement('div'); box.className = 'ed';
   const nameL = document.createElement('label'); nameL.textContent = 'Название';
   const name = document.createElement('input'); name.id = 'ed-name'; name.value = it.text; name.maxLength = 200;
-  name.onchange = () => { const v = name.value.trim(); if (v && v !== it.text) { it.text = v; stamp(it); save(); render(); } };
+  name.onchange = () => {
+    const v = name.value.trim(); if (!v || v === it.text) return;
+    const r = parseDue(v);
+    it.text = r.text.charAt(0).toUpperCase() + r.text.slice(1);
+    if (r.due) it.due = r.due;
+    stamp(it); save(); render();
+  };
   nameL.appendChild(name);
   const dueL = document.createElement('label'); dueL.textContent = 'Дата и время';
   const when = document.createElement('input'); when.id = 'ed-due'; when.type = 'datetime-local'; when.value = it.due || '';
