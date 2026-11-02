@@ -589,7 +589,7 @@ function googleCalUrl(it) {
   const d = new Date(it.due), e = new Date(d.getTime() + 30 * 60000);
   const f = x => x.getFullYear() + pad2(x.getMonth()+1) + pad2(x.getDate()) + 'T' + pad2(x.getHours()) + pad2(x.getMinutes()) + '00';
   let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch(e) {}
-  return 'https://calendar.google.com/calendar/r/eventedit?text=' + encodeURIComponent(it.text)
+  return 'https://calendar.google.com/calendar/event?action=TEMPLATE&text=' + encodeURIComponent(it.text)
     + '&dates=' + f(d) + '/' + f(e) + (tz ? '&ctz=' + encodeURIComponent(tz) : '');
 }
 // iPhone/iPad/Mac — встроенный календарь Apple через файл события; остальные — Google Календарь
