@@ -580,7 +580,7 @@ function googleCalUrl(it) {
   const d = new Date(it.due), e = new Date(d.getTime() + 30 * 60000);
   const f = x => x.getFullYear() + pad2(x.getMonth()+1) + pad2(x.getDate()) + 'T' + pad2(x.getHours()) + pad2(x.getMinutes()) + '00';
   let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch(e) {}
-  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(it.text)
+  return 'https://calendar.google.com/calendar/event?action=TEMPLATE&text=' + encodeURIComponent(it.text)
     + '&dates=' + f(d) + '/' + f(e) + (tz ? '&ctz=' + encodeURIComponent(tz) : '');
 }
 // iPhone/iPad/Mac — встроенный календарь Apple через файл события; остальные — Google Календарь
@@ -588,8 +588,15 @@ function toCalendar(it) {
   if (!it.due) return;
   if (isApple) { openIcs(it); return; }
   if (!navigator.onLine) { setStatus('Для Google Календаря нужен интернет. Без него можно скачать файл события в редактировании пункта.', true); return; }
-  const w = window.open(googleCalUrl(it), '_blank', 'noopener');
-  if (!w) location.href = googleCalUrl(it);
+  const web = googleCalUrl(it);
+  if (isAndroid) {
+    // сразу в приложение Google Календарь, без промежуточного окна браузера; нет приложения — откроется сайт
+    location.href = 'intent://' + web.replace(/^https:\/\//, '') + '#Intent;scheme=https;package=com.google.android.calendar;'
+      + 'S.browser_fallback_url=' + encodeURIComponent(web) + ';end';
+    return;
+  }
+  const w = window.open(web, '_blank', 'noopener');
+  if (!w) location.href = web;
 }
 
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
