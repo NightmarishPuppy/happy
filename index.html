@@ -532,8 +532,8 @@ function editor(it) {
   ok.onclick = () => { name.onchange(); editingId = null; render(); };
   row.appendChild(ok);
   box.append(nameL, dueL, quick, row);
-  if (it.due && isAndroid) {
-    const f = document.createElement('button'); f.type = 'button'; f.className = 'ics'; f.textContent = 'Календарь не открылся? Скачать файл события';
+  if (it.due && !isApple) {
+    const f = document.createElement('button'); f.type = 'button'; f.className = 'ics'; f.textContent = 'Другой календарь (Outlook и т. п.)? Скачать файл события';
     f.onclick = () => openIcs(it);
     box.appendChild(f);
   }
@@ -568,15 +568,21 @@ function openIcs(it) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 20000);
 }
+const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
+function googleCalUrl(it) {
+  const d = new Date(it.due), e = new Date(d.getTime() + 30 * 60000);
+  const f = x => x.getFullYear() + pad2(x.getMonth()+1) + pad2(x.getDate()) + 'T' + pad2(x.getHours()) + pad2(x.getMinutes()) + '00';
+  let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch(e) {}
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(it.text)
+    + '&dates=' + f(d) + '/' + f(e) + (tz ? '&ctz=' + encodeURIComponent(tz) : '');
+}
+// iPhone/iPad/Mac — встроенный календарь Apple через файл события; остальные — Google Календарь
 function toCalendar(it) {
   if (!it.due) return;
-  if (isAndroid) {
-    const b = new Date(it.due).getTime();
-    location.href = 'intent:#Intent;action=android.intent.action.INSERT;type=vnd.android.cursor.item/event;'
-      + 'S.title=' + encodeURIComponent(it.text) + ';l.beginTime=' + b + ';l.endTime=' + (b + 30 * 60000) + ';end';
-    return;
-  }
-  openIcs(it);
+  if (isApple) { openIcs(it); return; }
+  if (!navigator.onLine) { setStatus('Для Google Календаря нужен интернет. Без него можно скачать файл события в редактировании пункта.', true); return; }
+  const w = window.open(googleCalUrl(it), '_blank', 'noopener');
+  if (!w) location.href = googleCalUrl(it);
 }
 
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
