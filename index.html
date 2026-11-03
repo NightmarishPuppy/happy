@@ -84,6 +84,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sync{margin:22px 0 6px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--card);display:flex;flex-direction:column;gap:10px}
 .sync p,.sync ol{margin:0;font-size:14px;color:var(--muted);line-height:1.5}
 .sync ol{padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.sync ol li{display:list-item;border:0;padding:0;gap:0}
 .sync b{color:var(--ink)}
 .sync a{color:var(--accent);font-weight:600}
 .sync code{font-size:13px;background:var(--soft);padding:1px 4px;border-radius:4px}
@@ -225,6 +226,16 @@ li.editor{display:block;border-bottom:1px solid var(--line);padding:4px 0 14px}
         <input type="file" id="file" accept=".html,.htm,text/html" hidden>
       </div>
     </details>
+  </section>
+  <section class="sync" id="aboutbox">
+    <div class="sync-head">
+      <b>О приложении</b>
+      <span class="pill" id="app-ver"></span>
+    </div>
+    <p id="upd-info">Обновления обычно приходят сами при запуске. Если кажется, что приложение старое, проверьте вручную.</p>
+    <div class="row">
+      <button class="btn2" id="check-upd" type="button">Проверить обновление</button>
+    </div>
   </section>
   </section>
 </div>
@@ -668,7 +679,7 @@ function updateBackupNote(){
   const box = $('backup'), note = $('backup-note');
   const unsaved = savedAt > backupAt && items.length;
   const old = Date.now() - backupAt > 7*24*3600e3;
-  box.classList.toggle('stale', !!(unsaved && old && !cfg.token));
+  box.classList.toggle('stale', !!(unsaved && old && backupAt && !cfg.token));
   if (cfg.token) note.textContent = 'Со включённой синхронизацией это не обязательно. Копия пригодится, если захотите сохранить список отдельно.' + (backupAt ? ' Последняя: ' + fmt(backupAt) + '.' : '');
   else if (!backupAt) note.innerHTML = 'Без синхронизации список хранится только в памяти браузера на этом телефоне. <b>Копии в файле ещё нет.</b>';
   else note.innerHTML = 'Последняя копия в файл: ' + fmt(backupAt) + (unsaved ? '. <b>После неё есть изменения.</b>' : '. Все изменения в ней есть.');
@@ -1046,6 +1057,43 @@ function startSync() {
   setInterval(() => { if (!document.hidden) sync(); }, 60000);
   setInterval(showUpdated, 30000);
 }
+
+// ---------- Версия и обновление приложения ----------
+const APP_VERSION = 'spisok-v19';            // меняется вместе с VERSION в sw.js
+const verNum = v => (String(v).match(/v(\d+)/) || [])[1] || v;
+$('app-ver').textContent = 'версия ' + verNum(APP_VERSION);
+let updBusy = false;
+$('check-upd').onclick = async () => {
+  if (updBusy) return;
+  const btn = $('check-upd'), info = $('upd-info');
+  if (!navigator.onLine) { info.textContent = 'Нет интернета, проверить обновление сейчас нельзя.'; return; }
+  updBusy = true; btn.disabled = true; btn.textContent = 'Проверяю…';
+  const done = (text, err) => { info.textContent = text; info.style.color = err ? 'var(--danger)' : ''; updBusy = false; btn.disabled = false; btn.textContent = 'Проверить обновление'; };
+  let latest;
+  try {
+    const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 15000);
+    const r = await fetch('sw.js?check=' + Date.now(), {cache: 'no-store', signal: ctrl.signal});
+    clearTimeout(tm);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    latest = ((await r.text()).match(/VERSION\s*=\s*'([^']+)'/) || [])[1];
+    if (!latest) throw new Error('нет номера версии');
+  } catch (e) {
+    return done(e.name === 'AbortError' ? 'Сайт приложения не ответил за 15 секунд. Попробуйте позже.' : 'Не получилось проверить: ' + (e.message || 'нет связи с сайтом приложения') + '.', true);
+  }
+  if (latest === APP_VERSION) return done('У вас последняя версия (' + verNum(latest) + ').');
+  btn.textContent = 'Загружаю…';
+  info.textContent = 'Есть новая версия ' + verNum(latest) + '. Загружаю, список и синхронизация сохранятся…';
+  try {
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if (reg) {
+      const changed = new Promise(res => { navigator.serviceWorker.addEventListener('controllerchange', res, {once: true}); setTimeout(res, 15000); });
+      await reg.update();
+      await changed;
+    }
+  } catch (_) {}
+  persist();
+  setTimeout(() => location.reload(), 300);
+};
 
 // ---------- Экран настроек ----------
 function showSettings(on) {
