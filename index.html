@@ -130,6 +130,12 @@ li.editor{display:block;border-bottom:1px solid var(--line);padding:4px 0 14px}
 .ed .quick{display:flex;gap:6px;flex-wrap:wrap}
 .ed .quick button{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);font:500 14px var(--body);padding:7px 11px;border-radius:999px;cursor:pointer}
 .ed .ics{font-size:13px;color:var(--muted);background:none;border:0;padding:0;text-decoration:underline;cursor:pointer;align-self:flex-start;font-family:var(--body)}
+.errbox{border:1px solid var(--danger);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.errbox b{color:var(--danger)}
+.errbox summary{font-size:14px;color:var(--muted);cursor:pointer}
+.sync pre{margin:6px 0 0;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink);background:var(--soft);padding:8px;border-radius:8px;max-height:260px;overflow:auto}
+#err-more[open]{display:flex;flex-direction:column;gap:8px}
+#err-more button{align-self:flex-start}
 </style>
 </head>
 <body>
@@ -192,6 +198,19 @@ li.editor{display:block;border-bottom:1px solid var(--line);padding:4px 0 14px}
     </div>
     <div id="sync-on" hidden>
       <p id="sync-info"></p>
+      <div class="errbox" id="sync-err" hidden>
+        <b id="err-title"></b>
+        <p id="err-advice"></p>
+        <details id="err-more" hidden>
+          <summary>Подробности для разбора</summary>
+          <pre id="err-detail"></pre>
+          <button class="btn2" id="err-copy" type="button">Скопировать подробности</button>
+        </details>
+      </div>
+      <details class="files" id="sync-log" hidden>
+        <summary>Журнал обновлений</summary>
+        <pre id="sync-log-text"></pre>
+      </details>
       <div class="row">
         <button class="btn2" id="sync-now" type="button">Обновить сейчас</button>
         <button class="btn2" id="disconnect" type="button">Отключить</button>
@@ -701,15 +720,72 @@ const CFG = 'spisok-sync-v1', FILE = 'spisok.json';
 let cfg = {};
 try { cfg = JSON.parse(localStorage.getItem(CFG) || '{}') || {}; } catch(e) {}
 const storeCfg = () => { try { localStorage.setItem(CFG, JSON.stringify(cfg)); } catch(e) {} };
-let syncing = false, again = false, syncTimer = null, lastError = '';
+let syncing = false, again = false, syncTimer = null, lastError = '', lastErr = null, retryTimer = null;
+const LOG = 'spisok-sync-log';
+let syncLog = [];
+try { syncLog = JSON.parse(localStorage.getItem(LOG) || '[]') || []; } catch(e) {}
+function logSync(entry) { syncLog.unshift(entry); syncLog = syncLog.slice(0, 15); try { localStorage.setItem(LOG, JSON.stringify(syncLog)); } catch(e) {} }
 
-function gh(path, opts = {}) {
-  const headers = {Authorization: 'Bearer ' + cfg.token, Accept: 'application/vnd.github+json'};
+const OWNER = 'nightmarishpuppy';               // подробные ошибки видит только этот аккаунт
+const isOwner = () => (cfg.login || '').toLowerCase() === OWNER;
+const TIMEOUT = 15000;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let attemptsTotal = 0;
+
+// Один запрос с тайм-аутом. Ошибка несёт: шаг, вид, HTTP-код, ответ GitHub, время.
+async function ghOnce(url, opts, step, auth) {
+  const headers = auth ? {Authorization: 'Bearer ' + cfg.token, Accept: 'application/vnd.github+json'} : {};
   if (opts.body) headers['Content-Type'] = 'application/json';
-  return fetch('https://api.github.com' + path, {...opts, headers, cache: 'no-store'}).then(async r => {
-    if (!r.ok) { const e = new Error('GitHub ' + r.status); e.status = r.status; throw e; }
-    return r.status === 204 ? null : r.json();
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT);
+  const t0 = performance.now();
+  const fail = (kind, extra) => Object.assign(new Error(kind), {kind, step, method: opts.method || 'GET',
+    url: url.replace(/[0-9a-f]{32}/g, m => m.slice(0, 6) + '…'), ms: Math.round(performance.now() - t0)}, extra);
+  let r;
+  try { r = await fetch(url, {...opts, headers, cache: 'no-store', signal: ctrl.signal}); }
+  catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw fail('timeout');
+    throw fail(navigator.onLine ? 'network' : 'offline', {detail: (e.name || 'Error') + ': ' + (e.message || '')});
+  }
+  clearTimeout(timer);
+  const hdr = n => r.headers.get(n);
+  if (!r.ok) {
+    let msg = ''; try { const j = await r.json(); msg = j.message || ''; } catch (_) {}
+    const remaining = hdr('x-ratelimit-remaining');
+    const kind = r.status === 401 ? 'badtoken'
+      : (r.status === 403 || r.status === 429) && (remaining === '0' || hdr('retry-after') || /rate limit/i.test(msg)) ? 'limit'
+      : r.status === 403 ? 'forbidden'
+      : r.status === 404 ? 'notfound'
+      : r.status === 409 || r.status === 422 ? 'rejected'
+      : r.status >= 500 ? 'server' : 'http';
+    throw fail(kind, {status: r.status, detail: msg, remaining, reset: hdr('x-ratelimit-reset'),
+      retryAfter: hdr('retry-after'), requestId: hdr('x-github-request-id')});
+  }
+  const text = r.status === 204 ? '' : await r.text();
+  const ms = Math.round(performance.now() - t0);
+  return {text, ms, remaining: hdr('x-ratelimit-remaining')};
+}
+
+// С повторами: сбой связи, тайм-аут и сбой GitHub — ещё до двух попыток
+async function ghReq(url, opts = {}, step = '', auth = true) {
+  let lastErr;
+  for (let i = 0; i < 3; i++) {
+    attemptsTotal++;
+    try { return await ghOnce(url, opts, step, auth); }
+    catch (e) {
+      lastErr = e; e.tries = i + 1;
+      if (!['network', 'timeout', 'server'].includes(e.kind) || !navigator.onLine) throw e;
+      if (i < 2) await sleep(i === 0 ? 1500 : 4000);
+    }
+  }
+  throw lastErr;
+}
+async function gh(path, opts = {}, step = '') {
+  const r = await ghReq('https://api.github.com' + path, opts, step);
+  if (!r.text) return null;
+  try { return JSON.parse(r.text); }
+  catch (_) { throw Object.assign(new Error('badjson'), {kind: 'badjson', step, detail: 'Ответ GitHub не похож на JSON'}); }
 }
 
 // Слияние: для каждого пункта побеждает более свежее изменение; удаление — тоже изменение
@@ -744,25 +820,29 @@ function scheduleSync(delay = 1200) {
 async function sync() {
   if (!cfg.token) return;
   if (syncing) { again = true; return; }
-  if (!navigator.onLine) { lastError = 'offline'; showSync(); return; }
+  if (!navigator.onLine) { lastError = 'offline'; lastErr = {kind: 'offline', step: 'перед началом'}; showSync(); return; }
   syncing = true; showSync();
+  clearTimeout(retryTimer);
+  const t0 = performance.now(); attemptsTotal = 0;
+  let wrote = false;
   try {
     if (!cfg.gistId) {
-      const list = await gh('/gists?per_page=100');
+      const list = await gh('/gists?per_page=100', {}, 'поиск заметки со списком');
       const found = list.find(g => g.files && g.files[FILE]);
       if (found) cfg.gistId = found.id;
     }
     let remote = {items: [], tombs: {}};
     if (cfg.gistId) {
       try {
-        const g = await gh('/gists/' + cfg.gistId);
+        const g = await gh('/gists/' + cfg.gistId, {}, 'загрузка списка из GitHub');
         const f = g.files && g.files[FILE];
         if (f) {
-          const text = f.truncated ? await fetch(f.raw_url, {cache: 'no-store'}).then(r => r.text()) : f.content;
-          remote = JSON.parse(text || '{}');
+          const text = f.truncated ? (await ghReq(f.raw_url, {}, 'загрузка большого списка', false)).text : f.content;
+          try { remote = JSON.parse(text || '{}'); }
+          catch (_) { throw Object.assign(new Error('baddata'), {kind: 'baddata', step: 'чтение списка из заметки', detail: 'Файл spisok.json в заметке повреждён, длина ' + (text || '').length}); }
         }
       } catch (e) {
-        if (e.status === 404) { cfg.gistId = null; } else throw e;
+        if (e.kind === 'notfound') { cfg.gistId = null; } else throw e;
       }
     }
     // сливаем сразу после получения, чтобы не потерять правку, сделанную во время загрузки
@@ -774,19 +854,75 @@ async function sync() {
     }
     if (canon(remote) !== m || !cfg.gistId) {
       const body = {files: {[FILE]: {content: JSON.stringify(merged)}}};
-      if (cfg.gistId) await gh('/gists/' + cfg.gistId, {method: 'PATCH', body: JSON.stringify(body)});
+      wrote = true;
+      if (cfg.gistId) await gh('/gists/' + cfg.gistId, {method: 'PATCH', body: JSON.stringify(body)}, 'сохранение изменений в GitHub');
       else {
-        const g = await gh('/gists', {method: 'POST', body: JSON.stringify({description: 'Покупки и дела — данные приложения', public: false, ...body})});
+        const g = await gh('/gists', {method: 'POST', body: JSON.stringify({description: 'Покупки и дела — данные приложения', public: false, ...body})}, 'создание заметки со списком');
         cfg.gistId = g.id;
       }
     }
-    cfg.lastSync = Date.now(); lastError = ''; storeCfg();
+    cfg.lastSync = Date.now(); lastError = ''; lastErr = null; storeCfg();
+    logSync({t: Date.now(), ok: true, ms: Math.round(performance.now() - t0), n: attemptsTotal, w: wrote});
   } catch (e) {
-    lastError = e.status === 401 ? 'badtoken' : (e.status === 403 || e.status === 429) ? 'limit' : navigator.onLine ? 'error' : 'offline';
+    lastError = e.kind || 'unknown';
+    lastErr = {kind: e.kind || 'unknown', step: e.step || '', method: e.method, url: e.url, status: e.status, detail: e.detail || e.message,
+      ms: e.ms, tries: e.tries, total: Math.round(performance.now() - t0), remaining: e.remaining, reset: e.reset,
+      retryAfter: e.retryAfter, requestId: e.requestId, at: Date.now(), online: navigator.onLine,
+      net: navigator.connection ? (navigator.connection.effectiveType || '') + (navigator.connection.downlink ? ', ' + navigator.connection.downlink + ' Мбит/с' : '') : ''};
+    logSync({t: Date.now(), ok: false, ms: lastErr.total, n: attemptsTotal, k: lastErr.kind, st: e.status || 0, step: lastErr.step});
+    // временные сбои — ещё одна попытка через 20 секунд
+    if (['network', 'timeout', 'server'].includes(lastErr.kind)) retryTimer = setTimeout(sync, 20000);
   } finally {
     syncing = false; showSync();
     if (again) { again = false; scheduleSync(300); }
   }
+}
+
+// Что показать человеку: коротко (под вкладками), заголовок и совет (в настройках)
+function explain(err) {
+  const k = err ? err.kind : '';
+  const reset = err && err.reset ? new Date(err.reset * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}) : '';
+  const M = {
+    offline:   ['нет интернета', 'Нет интернета на устройстве', 'Изменения сохранены здесь и уйдут в GitHub, когда интернет появится.'],
+    network:   ['нет связи с GitHub', 'Не получилось соединиться с GitHub', 'Интернет на устройстве есть, но до GitHub не достучаться. Часто мешает VPN или провайдер: попробуйте сменить сервер VPN или выключить его. Приложение повторит попытку само через 20 секунд.'],
+    timeout:   ['GitHub долго не отвечает', 'GitHub не ответил за 15 секунд', 'Связь слишком медленная или обрывается, часто из-за VPN. Приложение повторит попытку само через 20 секунд.'],
+    server:    ['сбой на стороне GitHub', 'GitHub временно не работает', 'Это проблема GitHub, а не ваша. Подождите пару минут, приложение повторит попытку само.'],
+    limit:     ['GitHub просит подождать', 'Слишком много обращений к GitHub', 'GitHub временно ограничил запросы' + (reset ? ' до ' + reset : '') + '. Список сохранён здесь, синхронизация продолжится сама.'],
+    badtoken:  ['ключ не подходит', 'GitHub не принял ключ', 'Ключ удалён, истёк его срок или он скопирован не целиком. Нажмите «Отключить» и подключите новый ключ.'],
+    forbidden: ['нет доступа', 'У ключа нет нужного доступа', 'Скорее всего, при создании ключа не стояла галочка gist. Создайте новый ключ и подключите его.'],
+    notfound:  ['заметка не найдена', 'Заметка со списком не найдена', 'Возможно, её удалили на GitHub. Нажмите «Обновить сейчас»: приложение создаст новую заметку из списка на этом устройстве.'],
+    rejected:  ['GitHub не принял изменения', 'GitHub отказался сохранить изменения', 'Нажмите «Обновить сейчас». Если повторится, сохраните копию списка в файл.'],
+    baddata:   ['данные повреждены', 'Список в GitHub повреждён', 'Приложение ничего не перезаписало, чтобы не потерять данные. Список на этом устройстве цел.'],
+    badjson:   ['странный ответ GitHub', 'GitHub ответил что-то непонятное', 'Иногда так бывает из-за VPN или страниц-заглушек провайдера. Попробуйте ещё раз позже.']
+  };
+  const v = M[k] || ['ошибка', 'Не получилось обновить список', 'Попробуйте «Обновить сейчас». Список на этом устройстве в безопасности.'];
+  return {short: v[0], title: v[1], advice: v[2]};
+}
+function errDetails(e) {
+  if (!e) return '';
+  const L = [];
+  const t = d => new Date(d).toLocaleString('ru-RU');
+  L.push('Когда: ' + t(e.at || Date.now()));
+  L.push('Вид: ' + e.kind);
+  if (e.step) L.push('Шаг: ' + e.step);
+  if (e.method) L.push('Запрос: ' + e.method + ' ' + e.url);
+  if (e.status) L.push('Ответ GitHub: HTTP ' + e.status);
+  if (e.detail) L.push('Сообщение: ' + e.detail);
+  if (e.ms != null) L.push('Последняя попытка: ' + (e.ms / 1000).toFixed(1) + ' с');
+  if (e.tries) L.push('Попыток этого запроса: ' + e.tries);
+  if (e.total != null) L.push('Всего на обновление: ' + (e.total / 1000).toFixed(1) + ' с');
+  if (e.remaining != null) L.push('Осталось запросов к GitHub: ' + e.remaining);
+  if (e.reset) L.push('Лимит сбросится: ' + t(e.reset * 1000));
+  if (e.retryAfter) L.push('GitHub просит подождать: ' + e.retryAfter + ' с');
+  if (e.requestId) L.push('ID запроса GitHub: ' + e.requestId);
+  L.push('Интернет по мнению устройства: ' + (e.online ? 'есть' : 'нет') + (e.net ? ' (' + e.net + ')' : ''));
+  L.push('Устройство: ' + navigator.userAgent);
+  return L.join('\n');
+}
+function logText() {
+  return syncLog.map(x => new Date(x.t).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'})
+    + '  ' + (x.ok ? 'ок' : 'ошибка: ' + x.k + (x.st ? ' (HTTP ' + x.st + ')' : '') + (x.step ? ', ' + x.step : ''))
+    + ', ' + (x.ms / 1000).toFixed(1) + ' с, запросов: ' + x.n + (x.ok && x.w ? ', сохранено' : '')).join('\n') || 'Пока пусто';
 }
 
 function whenText(t) {
@@ -806,8 +942,13 @@ function showUpdated() {
     return;
   }
   const last = cfg.lastSync ? 'Обновлено ' + whenText(cfg.lastSync) : '';
+  const ex = explain(lastErr);
+  const temp = ['offline', 'network', 'timeout', 'server', 'limit'].includes(lastError);
   if (lastError === 'offline') el.textContent = (last || 'Ещё не обновлялось') + ' · нет интернета';
-  else if (lastError) { el.textContent = (last || 'Не обновилось') + ' · ошибка, загляните в настройки'; el.classList.add('err'); }
+  else if (lastError) {
+    el.textContent = (last || 'Не обновилось') + ' · ' + ex.short + (temp && lastError !== 'limit' ? ', повторю сам' : ', подробности в настройках');
+    el.classList.add('err');
+  }
   else if (syncing && !last) el.textContent = 'Обновляю…';
   else { el.textContent = last; el.classList.add('ok'); }
 }
@@ -823,16 +964,22 @@ function showSync() {
   const when = cfg.lastSync ? new Date(cfg.lastSync).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}) : '';
   if (syncing) pill.textContent = 'обновляю…';
   else if (lastError === 'offline') pill.textContent = 'нет интернета';
-  else if (lastError === 'badtoken') { pill.textContent = 'ключ не подходит'; pill.classList.add('err'); }
-  else if (lastError === 'limit') { pill.textContent = 'GitHub просит подождать'; pill.classList.add('err'); }
-  else if (lastError) { pill.textContent = 'ошибка'; pill.classList.add('err'); }
+  else if (lastError) { pill.textContent = explain(lastErr).short; pill.classList.add('err'); }
   else { pill.textContent = when ? 'обновлено в ' + when : 'подключена'; pill.classList.add('ok'); }
   const who = cfg.login ? 'Аккаунт GitHub: ' + cfg.login + '. ' : '';
-  $('sync-info').textContent = lastError === 'badtoken'
-    ? 'GitHub не принял ключ: возможно, он удалён или истёк. Нажмите «Отключить» и подключите новый ключ.'
-    : lastError === 'offline'
-      ? who + 'Изменения сохранены на телефоне и уйдут в GitHub, когда появится интернет.'
-      : who + 'Список одинаковый на всех устройствах, где подключён этот аккаунт.';
+  $('sync-info').textContent = who + 'Список одинаковый на всех устройствах, где подключён этот аккаунт.';
+  const box = $('sync-err');
+  box.hidden = !lastErr;
+  if (lastErr) {
+    const ex = explain(lastErr);
+    $('err-title').textContent = ex.title;
+    $('err-advice').textContent = ex.advice;
+  }
+  // подробности и журнал — только для владельца
+  $('err-more').hidden = !(lastErr && isOwner());
+  if (lastErr && isOwner()) $('err-detail').textContent = errDetails(lastErr);
+  $('sync-log').hidden = !isOwner();
+  if (isOwner()) $('sync-log-text').textContent = logText();
   updateBackupNote();
 }
 
@@ -841,9 +988,13 @@ $('connect').onclick = async () => {
   if (!token) { setStatus('Вставьте ключ с GitHub в поле выше.', true); return; }
   const btn = $('connect'); btn.disabled = true; btn.textContent = 'Проверяю…';
   try {
-    const r = await fetch('https://api.github.com/user', {headers: {Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json'}, cache: 'no-store'});
+    let r;
+    const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), TIMEOUT);
+    try { r = await fetch('https://api.github.com/user', {headers: {Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json'}, cache: 'no-store', signal: ctrl.signal}); }
+    catch (e) { throw new Error(e.name === 'AbortError' ? 'timeout' : navigator.onLine ? 'net' : 'offline'); }
+    finally { clearTimeout(tm); }
     if (r.status === 401) throw new Error('bad');
-    if (!r.ok) throw new Error('net');
+    if (!r.ok) throw new Error(r.status >= 500 ? 'server' : 'net');
     const scopes = r.headers.get('x-oauth-scopes');
     if (scopes !== null && !/\bgist\b/.test(scopes)) throw new Error('scope');
     const u = await r.json();
@@ -855,10 +1006,22 @@ $('connect').onclick = async () => {
   } catch (e) {
     setStatus(e.message === 'bad' ? 'GitHub не принял ключ. Скопируйте его целиком, он начинается с ghp_.'
       : e.message === 'scope' ? 'У ключа нет галочки gist. Создайте новый ключ по ссылке выше.'
-      : 'Не удалось связаться с GitHub. Проверьте интернет и попробуйте ещё раз.', true);
+      : e.message === 'offline' ? 'Нет интернета на устройстве. Подключитесь и попробуйте снова.'
+      : e.message === 'timeout' ? 'GitHub не ответил за 15 секунд. Проверьте интернет или VPN и попробуйте снова.'
+      : e.message === 'server' ? 'GitHub временно не работает. Попробуйте через пару минут.'
+      : 'Не получилось соединиться с GitHub. Проверьте интернет; если включён VPN, попробуйте другой сервер.', true);
   } finally { btn.disabled = false; btn.textContent = 'Подключить'; }
 };
 $('sync-now').onclick = () => sync();
+$('err-copy').onclick = async () => {
+  const text = errDetails(lastErr) + '\n\nЖурнал:\n' + logText();
+  try { await navigator.clipboard.writeText(text); setStatus('Подробности скопированы.'); }
+  catch (_) {
+    const r = document.createRange(); r.selectNodeContents($('err-detail'));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    setStatus('Текст выделен, скопируйте его вручную.');
+  }
+};
 let discTimer = null;
 $('disconnect').onclick = () => {
   const b = $('disconnect');
@@ -868,7 +1031,7 @@ $('disconnect').onclick = () => {
     return;
   }
   clearTimeout(discTimer); b.classList.remove('confirm'); b.textContent = 'Отключить';
-  cfg = {}; storeCfg(); lastError = ''; showSync();
+  cfg = {}; storeCfg(); lastError = ''; lastErr = null; showSync();
   setStatus('Синхронизация отключена. Список остался на этом устройстве.');
 };
 
